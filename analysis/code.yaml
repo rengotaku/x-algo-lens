@@ -1,0 +1,856 @@
+# 根拠台帳② — コードそのもの（設計・実装技法）の観察
+#
+# 「投稿がどう扱われるか」ではなく「この実装がどう作られているか」を見る。
+# 書き方・スキーマは analysis/README.md を参照。
+# path / line / snippet は source_ref の commit に対してのみ有効（make verify が照合する）。
+
+source_ref: a389166f6cf5da70a286b568c87695d4dcdce3a1
+
+observations:
+  # ── パイプライン抽象（candidate-pipeline / home-mixer の配線）
+  - id: C001
+    topic: architecture
+    title: 段の順序は trait のデフォルト実装で固定されている
+    summary: >-
+      CandidatePipeline の execute_stages が
+      QueryHydrator → Source → Hydrator → Filter → Scorer → Selector → PostSelection → SideEffect
+      の順序をデフォルトメソッドとして持つ。個々のパイプライン実装は各段のコンポーネント配列を返すだけで、
+      順序そのものは上書きできない。
+    takeaway: >-
+      「何を実行するか」と「どう実行するか」を分離したテンプレートメソッド。
+      パイプラインを増やすたびに順序ロジックを書き直す機会を消している。
+    evidence:
+      - path: candidate-pipeline/candidate_pipeline.rs
+        line: 97
+        line_end: 148
+        snippet: 'let hydrated_query = self.hydrate_query(query).await;'
+    confidence: high
+
+  - id: C002
+    topic: concurrency
+    title: ハイドレーションは並行実行するが失敗を無視して続行する
+    summary: >-
+      hydrate_query は複数の QueryHydrator を join_all で並行実行し、結果を
+      `if let Ok(hydrated) = result` で受ける。Err は束縛すらされずクエリに反映されない。
+      execute_stages 側は失敗件数を数えない。
+    takeaway: >-
+      可用性を優先して部分失敗を吸収する設計。ただし「特徴量が欠けたまま推薦が返る」状態が
+      呼び出し側から観測できず、静かな品質劣化になりうる。
+    evidence:
+      - path: candidate-pipeline/candidate_pipeline.rs
+        line: 213
+        line_end: 214
+        snippet: 'let results = join_all(hydrate_futures).await;'
+      - path: candidate-pipeline/candidate_pipeline.rs
+        line: 216
+        line_end: 221
+        snippet: 'if let Ok(hydrated) = result {'
+    confidence: high
+
+  - id: C003
+    topic: error-handling
+    title: 戻り値の件数不一致を検知して全件エラーに丸める契約チェック
+    summary: >-
+      Hydrator::run と Scorer::run は、実装が返した Vec の長さが入力候補数と一致しない場合、
+      個々の Ok/Err を信用せず `vec![Err(message); expected_len]` で全件を失敗扱いに置き換える。
+    takeaway: >-
+      trait 実装者の件数ズレ・順序ズレが「候補が黙って消える」形で顕在化するのを防ぐガード。
+      粒度は荒いが、インデックス対応を前提にした API では効く。
+    evidence:
+      - path: candidate-pipeline/hydrator.rs
+        line: 27
+        line_end: 47
+        snippet: 'vec![Err(message); expected_len]'
+    confidence: high
+
+  - id: C004
+    topic: abstraction
+    title: キャッシュ付きハイドレータは blanket impl で自動的に Hydrator になる
+    summary: >-
+      CachedHydrator は associated type とキャッシュ操作だけを要求し、
+      `impl<Q, C, T> Hydrator<Q, C> for T where T: CachedHydrator<Q, C>` がキャッシュミス分だけ
+      取得するロジックを肩代わりする。実装者は Hydrator を直接実装しない。
+    takeaway: >-
+      拡張点を「何を実装すれば繋がるか」として型で強制する例。
+      継承の代わりにトレイトの自動実装で共通処理を配る、Rust らしい書き方。
+    evidence:
+      - path: candidate-pipeline/hydrator.rs
+        line: 120
+        line_end: 126
+        snippet: 'impl<Q, C, T> Hydrator<Q, C> for T'
+      - path: candidate-pipeline/hydrator.rs
+        line: 139
+        line_end: 157
+        snippet: 'if self.already_hydrated(candidate) {'
+    confidence: high
+
+  - id: C005
+    topic: api-design
+    title: コンポーネント名を型名から自動導出している
+    summary: >-
+      各段の trait は `name()` のデフォルト実装として型名の最終セグメントを返す
+      short_type_name を持ち、それが統計ラベル・ログのタグになる。
+    takeaway: >-
+      ラベルの書き忘れを構造的に防げる一方、型をリネームすると監視ダッシュボードの
+      メトリクス名が無言で変わる。リファクタとメトリクス互換性が結合する。
+    evidence:
+      - path: candidate-pipeline/candidate_pipeline.rs
+        line: 200
+        line_end: 202
+        snippet: 'util::short_type_name(type_name_of_val(self))'
+      - path: candidate-pipeline/util.rs
+        line: 1
+        line_end: 3
+        snippet: 'full.rsplit("::").next().unwrap_or(full)'
+    confidence: high
+
+  - id: C006
+    topic: concurrency
+    title: 副作用は tokio::spawn の投げっぱなしで結果を捨てる
+    summary: >-
+      run_side_effects は SideEffect 群を tokio::spawn した中で join_all し、
+      その結果を `let _ = join_all(futures).await;` で握りつぶす。JoinHandle も破棄される。
+    takeaway: >-
+      リクエストのレイテンシに副作用を乗せない判断としては合理的だが、失敗が完全に不可視化される。
+      観測は各 SideEffect の内部実装頼み。
+    evidence:
+      - path: candidate-pipeline/candidate_pipeline.rs
+        line: 396
+        line_end: 409
+        snippet: 'let _ = join_all(futures).await;'
+    confidence: high
+
+  - id: C007
+    topic: error-handling
+    title: 起動時は expect で即死、実行時は Result で握って継続
+    summary: >-
+      パイプライン構築時のクライアント生成は `.expect("Failed to create ... client")` を連発する一方、
+      execute_stages のランタイムパスは Result で表現し panic しない。
+    takeaway: >-
+      「依存の構築失敗は fail-fast、リクエスト処理中の失敗は継続」という一貫した使い分け。
+      境界がどこにあるかが読み取りやすい。
+    evidence:
+      - path: home-mixer/candidate_pipeline/for_you_candidate_pipeline.rs
+        line: 88
+        line_end: 93
+        snippet: '.expect("Failed to create AdIndex client"),'
+    confidence: high
+
+  # ── home-mixer の Rust 実装内部
+  - id: C008
+    topic: code-quality
+    title: param! マクロの定義はこのリポジトリに存在しない
+    summary: >-
+      params/param.rs は冒頭に「mirrored from config feature-switch defaults」と書かれており、
+      外部クレート由来の param! マクロで 150 個近い設定を宣言している。
+      マクロ定義自体はリポジトリ内に存在せず、home-mixer に Cargo.toml も無い。
+    takeaway: >-
+      公開されたのは実装全体ではなく「既定値のミラー」。
+      このファイルは実装のドキュメントではなく設定台帳として読む必要がある。
+      公開範囲を評価するうえで最も重要な観察。
+    evidence:
+      - path: home-mixer/params/param.rs
+        line: 1
+        line_end: 2
+        snippet: 'mirrored from config feature-switch defaults'
+    confidence: high
+
+  - id: C009
+    topic: api-design
+    title: クエリ構造体のコンストラクタが 31 個の位置引数を取る
+    summary: >-
+      ScoredPostsQuery::new は u64 / String / bool が並ぶ 31 引数の位置引数コンストラクタ。
+      構造体自体は 65 フィールド超で、引数順を間違えても型が合えばコンパイルが通る。
+    takeaway: >-
+      同じクレート内の server.rs 側はビルダーを使っており、境界で一貫していない。
+      Default + struct update 構文を使わない理由がコードからは読み取れない。
+    evidence:
+      - path: home-mixer/models/query.rs
+        line: 128
+        line_end: 160
+        snippet: 'pub fn new('
+    confidence: high
+
+  - id: C010
+    topic: performance
+    title: 22 種のアクションを u64 のビットマスクに圧縮している
+    summary: >-
+      value_model_gate.rs は const fn でコンパイル時にインデックス配列を作り、
+      行ごとに `mask |= 1 << j` で 1 個の u64 に圧縮する。以降の判定はビット演算だけで済む。
+    takeaway: >-
+      ホットパスから Vec 探索と HashSet 確保を消すための古典的な手。
+      const fn による配列初期化は Rust の const 評価を実務で使った例。
+    evidence:
+      - path: home-mixer/scorers/value_model_gate.rs
+        line: 254
+        line_end: 262
+        snippet: 'const fn tracked_indices() -> [usize; N_TRACKED] {'
+      - path: home-mixer/scorers/value_model_gate.rs
+        line: 208
+        line_end: 215
+        snippet: 'mask |= 1 << j;'
+    confidence: high
+
+  - id: C011
+    topic: language
+    title: 重みが実行時に書き換わる前提でゼロ除算と NaN を防いでいる
+    summary: >-
+      offset_score は total_sum が 0.0 のとき除算せず max(0.0) にフォールバックする。
+      dwell regret 側も temperature を下限 1e-6 にクランプし、exp の引数を非正に制限している。
+    takeaway: >-
+      設定が外部から動的に上書きされる前提のコードでは、
+      「全部の重みが 0 になった」状態を想定して書く必要がある、という実例。
+    evidence:
+      - path: home-mixer/scorers/ranking_scorer.rs
+        line: 525
+        line_end: 533
+        snippet: 'pub(crate) fn offset_score(combined_score: f64, w: &ScoringWeights) -> f64 {'
+      - path: home-mixer/scorers/ranking_scorer.rs
+        line: 570
+        line_end: 597
+        snippet: 'let temperature = w.temperature.max(DWELL_REGRET_MIN_TEMPERATURE);'
+    confidence: high
+
+  - id: C012
+    topic: code-quality
+    title: 浮動小数点ソートの NaN 扱いが同一クレート内で不統一
+    summary: >-
+      ranking_scorer.rs は `partial_cmp(a).unwrap_or(Ordering::Equal)` でソートし、
+      author_cold_start.rs は `total_cmp` を使う。前者は NaN を「等しい」と扱うため順序が不定になる。
+    takeaway: >-
+      スコアがモデル由来で NaN を含みうる文脈では total_cmp 側が安全。
+      同種の操作に異なる安全性レベルの実装が混在している。
+    evidence:
+      - path: home-mixer/scorers/ranking_scorer.rs
+        line: 627
+        snippet: 'indexed.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(Ordering::Equal));'
+      - path: home-mixer/scorers/author_cold_start.rs
+        line: 57
+        snippet: 'order.sort_by(|&a, &b| scores[b].total_cmp(&scores[a]).then(a.cmp(&b)));'
+    confidence: high
+
+  - id: C013
+    topic: code-quality
+    title: 乱数を使わずユーザー単位で安定した A/B 振り分けをしている
+    summary: >-
+      ヒステリシス帯域内のスコアに対し、user_id にフィボナッチハッシュ定数
+      0x9E3779B97F4A7C15 を掛けて最下位ビットを見るだけで 50/50 を決める。
+      同一 user_id なら常に同じ結果になる。
+    takeaway: >-
+      乱数状態もストレージも持たずに「ユーザー単位で安定した擬似ランダム」を得る古典的な手法。
+      テストが同一クエリで結果が変わらないことを検証しており、意図的な設計と分かる。
+    evidence:
+      - path: home-mixer/scorers/value_model_gate.rs
+        line: 136
+        line_end: 140
+        snippet: 'query.user_id.wrapping_mul(0x9E3779B97F4A7C15) & 1 == 0'
+    confidence: high
+
+  - id: C014
+    topic: abstraction
+    title: 候補構造体はほぼ全フィールドが Option で段階的に埋まる
+    summary: >-
+      PostCandidate は 65 フィールド超を持ち、必須値以外はほぼ Option。
+      一部には serde(default) が付き、古いキャッシュ JSON にフィールドが無くても復元できる。
+    takeaway: >-
+      各 hydrator が段階的に埋めていくパイプライン設計の反映。
+      「未取得」と「値なし」を区別できない代償を払う代わりに、スキーマ進化の後方互換を得ている。
+    evidence:
+      - path: home-mixer/models/candidate.rs
+        line: 8
+        line_end: 9
+        snippet: 'pub struct PostCandidate {'
+      - path: home-mixer/models/candidate.rs
+        line: 24
+        line_end: 25
+        snippet: 'pub mpn_parts: Option<MpnParts>,'
+    confidence: high
+
+  # ── ML ランカー（phoenix / vm-ranker）
+  - id: C015
+    topic: architecture
+    title: 推論ランナーが学習用クラスを継承している
+    summary: >-
+      BaseModelRunner は学習側の RecsysTrainer を継承し、学習時と同じ計算グラフ構築コードを
+      推論サーバでも使う。推論固有の要素（バッチバケット、永続バッファ、キュー）は
+      サブクラス側に積まれている。
+    takeaway: >-
+      train/serve skew を「同じコードを共有する」ことで構造的に防ぐ設計。
+      代償としてクラスは肥大化している。
+    evidence:
+      - path: phoenix/xrex/inference/model_runner.py
+        line: 458
+        snippet: 'class BaseModelRunner(RecsysTrainer, Generic[RequestBatch, ModelConfig], ABC):'
+    confidence: high
+
+  - id: C016
+    topic: performance
+    title: バッチサイズを離散バケットに丸めて JIT 再コンパイルを避ける
+    summary: >-
+      推論バッチサイズを候補集合の中から「実サイズ以上で最小のもの」に丸める select_bucket があり、
+      バケットごとに永続バッファと warmup を持つ。
+    takeaway: >-
+      入力 shape が変わるたびに再コンパイルが走る JAX/XLA の性質に対する定石。
+      それを Rust 側ではなく Python のトレーナークラスに置いている点が構成上の特徴。
+    evidence:
+      - path: phoenix/xrex/inference/model_runner.py
+        line: 558
+        line_end: 563
+        snippet: 'def select_bucket(self, orig_batch_size: int) -> int:'
+    confidence: high
+
+  - id: C017
+    topic: code-quality
+    title: 学習と推論をまたぐハッシュ定数が両言語に手で複製されている
+    summary: >-
+      ID を埋め込みテーブルへ写像する乗算ハッシュの定数が、Python 側（numba）と
+      Rust 側の両方に同一の数値として直書きされている。共有スキーマは無い。
+    takeaway: >-
+      値がズレてもコンパイルエラーにならず、モデル精度の劣化としてしか現れない脆い契約。
+      言語をまたぐ数値定数は生成するか単一ソースから読むべき、という反面教師。
+    evidence:
+      - path: phoenix/crates/common/xai-recsys/src/model_config.rs
+        line: 91
+        line_end: 92
+        snippet: 'let mut hash_result ='
+      - path: phoenix/xrex/models/recsys_embedding.py
+        line: 169
+        snippet: 'raw = (ids[i] * scales[j] + biases[j]) % modulus'
+    confidence: high
+
+  - id: C018
+    topic: performance
+    title: 埋め込み行のギャザーを AVX2 / NEON で手書きしている
+    summary: >-
+      embedding_gather は x86_64 の AVX2 と aarch64 の NEON 向けに non-temporal store を使った
+      コピーを手書きし、feature detection で切り替える。フォールバック実装も持つ。
+      テストが全 row_size で SIMD 版とジェネリック版の一致を検証している。
+    takeaway: >-
+      キャッシュを汚さない streaming store で帯域を稼ぐ、レイテンシ厳しい推論らしい最適化。
+      分岐ごとに正しさをテストで担保しているのは堅実。
+    evidence:
+      - path: phoenix/crates/serving/xai-recsys-engine/src/emb_table.rs
+        line: 221
+        line_end: 223
+        snippet: 'unsafe fn copy_rows_avx2('
+      - path: phoenix/crates/serving/xai-recsys-engine/src/emb_table.rs
+        line: 1474
+        line_end: 1493
+        snippet: 'fn copy_rows_matches_generic_for_all_row_sizes() {'
+    confidence: high
+
+  - id: C019
+    topic: concurrency
+    title: 実測サービス時間の EWMA から間に合わない要求を先に落とす
+    summary: >-
+      AdmissionController はバッチ処理時間を指数移動平均で追跡し、キュー滞留から ETA を予測して
+      期限に間に合わないリクエストを受け付け段階で拒否する。ETA モデルは 2 方式を切り替えられる。
+    takeaway: >-
+      固定タイムアウトではなく実測から SLA 逸脱を予測して能動的に落とす設計。
+      テストが EWMA の収束まで書かれており、運用でのチューニング跡が見える。
+    evidence:
+      - path: phoenix/crates/serving/xai-recsys-engine/src/admission.rs
+        line: 145
+        line_end: 162
+        snippet: 'pub fn should_reject(&self, remaining_us: Option<u64>, queue_depth: i64) -> bool {'
+    confidence: high
+
+  - id: C020
+    topic: algorithm
+    title: 多様化リランキングに貪欲 DPP を増分 Cholesky で実装している
+    summary: >-
+      vm-ranker はコサイン類似度カーネルに対する貪欲 DPP の MAP 推定を、
+      増分 Cholesky 分解で実装している。埋め込みは f16 で保持し、欠損時はランダム単位ベクトルで代替する。
+    takeaway: >-
+      スコア順の後段に数学的に厳密な多様化を挟む設計は洗練されている。
+      一方、欠損をランダムベクトルで埋めるのはカーネルにノイズを入れる判断で、疑問符が付く。
+    evidence:
+      - path: vm-ranker/dpp.rs
+        line: 241
+        line_end: 279
+        snippet: 'for s in 1..max_items {'
+      - path: vm-ranker/scoring/dpp_model.rs
+        line: 22
+        line_end: 36
+        snippet: 'fn random_unit_embedding(dim: usize) -> Arc<Vec<f16>> {'
+    confidence: high
+
+  - id: C021
+    topic: code-quality
+    title: 名前と実装が一致していない状態問い合わせメソッドが残っている
+    summary: >-
+      RequestQueue の is_empty() は常に true、len() は常に 0 を返し、
+      reset_dequeue_timer() は何もしない。呼び出し側がこの戻り値を分岐に使っていないため実害は出ていない。
+    takeaway: >-
+      名前が示す契約を実装が満たしていない痕跡コード。
+      将来これを信じて使った箇所が静かに壊れる形の負債。
+    evidence:
+      - path: phoenix/crates/serving/xai-recsys-engine/src/request_queue.rs
+        line: 122
+        line_end: 130
+        snippet: 'pub fn reset_dequeue_timer(&mut self) {}'
+    confidence: high
+
+  # ── ルールエンジンと安全性
+  - id: C022
+    topic: architecture
+    title: 可視性判定は Drop 即時終了・Interstitial 蓄積の非対称な短絡
+    summary: >-
+      evaluate_rules はルール配列を先頭から走査し、Drop が出た時点で即 return する。
+      Interstitial は「まだ Allow のときだけ」上書きして走査を続ける。
+    takeaway: >-
+      Drop > Interstitial > Allow の優先度を、enum の順序ではなく代入条件で表現している。
+      ループ 1 本で済む代わりに、優先度の意味が呼び出し側から読み取りにくい。
+    evidence:
+      - path: visibility-filtering/rules/mod.rs
+        line: 86
+        line_end: 105
+        snippet: 'fn evaluate_rules('
+    confidence: high
+
+  - id: C023
+    topic: language
+    title: 同じ「ルール」を 3 通りの方式で表現している
+    summary: >-
+      visibility-filtering はルールを Rust の Vec<Box<dyn Rule>> として直接コードに持ち、
+      abuse-enforcement-service は CEL 式を埋め込んだ YAML として持ち、
+      botmaker は ANTLR 文法を持つ独自 DSL（.bot ファイル）として持つ。
+    takeaway: >-
+      同一組織のコードベース内に、コード直書き・既製式言語・自作 DSL の 3 世代が同居している。
+      それぞれ「型安全性」「運用の俊敏性」「表現力」のどれを取ったかが読み取れる。
+    evidence:
+      - path: visibility-filtering/rules/registry.rs
+        line: 138
+        line_end: 170
+        snippet: 'fn timeline_home_recommendations_policy() -> Vec<Box<dyn Rule>> {'
+      - path: abuse-enforcement-service/service-lib/src/rules.rs
+        line: 256
+        line_end: 277
+        snippet: 'pub fn decide_with('
+      - path: botmaker/src/antlr/com/twitter/botmaker/antlr/BotMaker.g
+        line: 1
+        line_end: 55
+        snippet: 'grammar BotMaker;'
+    confidence: high
+
+  - id: C024
+    topic: error-handling
+    title: ルール配信が壊れても最後に成功したルールセットで動き続ける
+    summary: >-
+      RuleSlot は「コンパイル時埋め込み」「直近成功」「動的取得」の 3 層を持ち、
+      動的 YAML が不正ならログを出して直近成功にフォールバックする。
+      どの層で動作中かは status に露出する。
+    takeaway: >-
+      設定配信の障害でサービスを落とさない graceful degradation。
+      どの層で動いているかを観測可能にしてある点が実運用を意識している。
+    evidence:
+      - path: abuse-enforcement-service/service-lib/src/rules.rs
+        line: 423
+        line_end: 457
+        snippet: 'fn compile_and_cache('
+    confidence: high
+
+  - id: C025
+    topic: api-design
+    title: ルールに有効期限を必須フィールドとして持たせている
+    summary: >-
+      個々の .bot ルールは id / expiry / isActive を持ち、期限が来れば失効する。
+      公開されている 20 件の .bot すべてが expiry を持つ。
+      緊急対応で追加したルールが恒久化しない仕組みが DSL のスキーマ側にある。
+    takeaway: >-
+      大量ルールの保守性を、命名規約やレビューではなく「必須フィールドとしての有効期限」で
+      担保するという設計判断。運用ルールを人間の規律に頼らない例。
+    evidence:
+      - path: botmaker-rules/scarecrow/bot/Tweet_Spam_High_Recall_RTF_All_Bad_URL_Sources.bot
+        line: 1
+        snippet: "id: '3226'"
+      - path: botmaker-rules/scarecrow/bot/Tweet_Spam_High_Recall_RTF_All_Bad_URL_Sources.bot
+        line: 49
+        line_end: 50
+        snippet: 'expiry:'
+    confidence: high
+    notes: >-
+      実測: `grep -l '^expiry:' botmaker-rules/scarecrow/bot/*.bot | wc -l` = 20（対象 20 件）。
+
+  - id: C026
+    topic: api-design
+    title: 同型のルールを const テーブルとして宣言し評価は 1 箇所に集約
+    summary: >-
+      SafetyLabelDropRule / AuthorFlagDropRule は名前・対象・理由・免除フラグを持つ汎用 struct で、
+      個別ルールはその const インスタンスとして宣言されるだけ。評価ロジックは各 struct に 1 実装しかない。
+    takeaway: >-
+      「同じ形のルールを大量に書く」問題をマクロではなく const + データで解いている。
+      ルール追加のレビューが 1 行を読むだけで済む。
+    evidence:
+      - path: visibility-filtering/rules/tweet_label_drops.rs
+        line: 7
+        line_end: 45
+        snippet: 'pub struct SafetyLabelDropRule {'
+      - path: visibility-filtering/rules/user_rules.rs
+        line: 5
+        line_end: 20
+        snippet: 'pub struct AuthorFlagDropRule {'
+    confidence: high
+
+  - id: C027
+    topic: testing
+    title: テストの assert メッセージが旧 Scala 実装との差分仕様になっている
+    summary: >-
+      registry.rs のテストには「Scala drops it OON only」のように、
+      移植前の実装での挙動をアサーションメッセージに書き残したものが複数ある。
+    takeaway: >-
+      移植プロジェクトで、テストメッセージ自体を「バグではなく意図的な挙動差」の
+      設計ドキュメントとして使っている。後から読む人が差分を判別できる。
+    evidence:
+      - path: visibility-filtering/rules/registry.rs
+        line: 419
+        line_end: 441
+        snippet: 'fn spam_high_recall_drops_oon_but_allows_in_network() {'
+    confidence: high
+
+  - id: C028
+    topic: error-handling
+    title: レート制限の未知戦略が fail-open で素通しになる
+    summary: >-
+      ScarecrowBotMaker のレート制限処理は RateLimitingStrategy を match し、
+      未知の値が来た場合は警告ログを出したうえで実質素通しにフォールバックする。
+    takeaway: >-
+      C024 の fail-closed / graceful degradation と対照的に、ここは安全機構が
+      「未知の設定＝制限なし」に倒れる。設定ミスやデプロイ順序で制限が無効化されうる。
+    evidence:
+      - path: scarecrow/ScarecrowBotMaker.scala
+        line: 556
+        line_end: 565
+        snippet: 'case unknown =>'
+    confidence: medium
+
+  # ── Scala バッチ層と新旧の接続
+  - id: C029
+    topic: performance
+    title: 疎ベクトルを二重配列で持ちマージ走査で演算する
+    summary: >-
+      SimClustersEmbedding は同じ (clusterId, score) 集合を「挿入順」と「ID 昇順」の
+      2 組の並行配列で保持し、内積・Jaccard 等を Map を使わずソート済み配列の
+      マージ走査で線形時間に処理する。
+    takeaway: >-
+      JVM 上で Map のボクシングとハッシュコストを避けるための低レベル最適化。
+      可読性より速度を取った、大規模バッチらしい実装。
+    evidence:
+      - path: simclusters/simclusters_v2/common/SimClustersEmbedding.scala
+        line: 14
+        line_end: 17
+        snippet: 'val clusterIds: Array[ClusterId]'
+      - path: simclusters/simclusters_v2/common/SimClustersEmbedding.scala
+        line: 92
+        line_end: 112
+        snippet: 'while (i1 < sortedClusterIds.length && i2 < another.sortedClusterIds.length) {'
+    confidence: high
+
+  - id: C030
+    topic: abstraction
+    title: 類似度計算の実装をフラグで差し替えられるが既定は最適化前
+    summary: >-
+      ApproximateCosineSimilarity に original / optimized / experimental の 3 実装があり、
+      コマンドラインフラグの文字列でどれを使うか選ぶ。既定値は "original"。
+      最適化版は 3 本の HashMap を 1 本に統合してハッシュ探索を削っている。
+    takeaway: >-
+      本番トラフィック上でアルゴリズムを A/B するための Strategy + フラグ。
+      最適化版が既定になっていないところに、効果がまだ確証されていない段階が見える。
+    evidence:
+      - path: simclusters/simclustersann/modules/SimClustersANNCandidateSourceModule.scala
+        line: 20
+        line_end: 25
+        snippet: 'val acsFlag = flag[String]('
+      - path: simclusters/simclustersann/modules/SimClustersANNCandidateSourceModule.scala
+        line: 35
+        line_end: 40
+        snippet: 'val approximateCosineSimilarity = acsFlag() match {'
+      - path: simclusters/simclustersann/candidate_source/OptimizedApproximateCosineSimilarity.scala
+        line: 48
+        snippet: 'val candidateScoresMap = new java.util.HashMap[Long, (Double, Double)](InitialCandidateMapSize)'
+    confidence: high
+
+  - id: C031
+    topic: architecture
+    title: 新旧スタックの接続は Thrift バイナリを汎用 gRPC で運ぶ形
+    summary: >-
+      Rust 側の SimClustersAnnClient は Thrift 構造体をバイナリ化し、
+      汎用 GenericThriftService の 1 メソッドにペイロードとして詰めて送る。
+      受け側の Scala も同じ汎用サービスとして受けてから既存コントローラに委譲する。
+    takeaway: >-
+      型付き gRPC IDL を新規に整備せず、既存の Thrift 定義を運搬するだけのブリッジ。
+      移行コストは最小だが、gRPC 層は素通しのバイト列でしかなく型安全性は Thrift に閉じる。
+    evidence:
+      - path: home-mixer/clients/simclusters_ann_client.rs
+        line: 6
+        snippet: 'use xai_proto::generic_thrift::generic_thrift_service_client::GenericThriftServiceClient;'
+      - path: home-mixer/clients/simclusters_ann_client.rs
+        line: 97
+        snippet: 'let payload = xai_x_thrift::serialize_binary(&query)'
+      - path: simclusters/simclustersann/controllers/GetTweetCandidatesGrpcController.scala
+        line: 22
+        snippet: 'extends GenericThriftServiceGrpc.GenericThriftServiceImplBase {'
+    confidence: high
+
+  - id: C032
+    topic: architecture
+    title: サービング層は新しいが土台のクラスタモデルは 2020 年版のまま
+    summary: >-
+      Rust の SimclustersSource は MODEL_20M_145K_2020 を定数で指定しており、
+      対応する Scalding 更新ジョブは 2020-10-04 起点で週次の差分更新を続けている。
+    takeaway: >-
+      サービング層の刷新（Scala → Rust）と、基盤となるクラスタリングモデルの世代は
+      独立に進んでいる。「新しい実装」と「新しいモデル」は別物という good example。
+    evidence:
+      - path: home-mixer/sources/simclusters_source.rs
+        line: 28
+        snippet: 'const MODEL_VERSION: ModelVersion = ModelVersion::MODEL_20M_145K_2020;'
+      - path: simclusters/simclusters_v2/scalding/update_known_for/UpdateKnownFor20M145K2020.scala
+        line: 37
+        snippet: 'override val firstTime: RichDate = RichDate("2020-10-04")'
+    confidence: high
+
+  - id: C033
+    topic: language
+    title: ID 型は type alias なので取り違えをコンパイラが検出できない
+    summary: >-
+      TweetId / UserId / ClusterId はいずれも Long の type alias として定義されており、
+      互いに代入可能。加えて文字列とモデルバージョン enum の implicit 変換が定義されている。
+    takeaway: >-
+      型エイリアスは可読性のためのドキュメントに留まり、取り違えは防げない
+      （opaque type や値クラスなら防げた）。implicit 変換の多用も、
+      どこで変換が起きたかを追いにくくする。
+    evidence:
+      - path: simclusters/simclusters_v2/common/package.scala
+        line: 5
+        line_end: 7
+        snippet: 'type TweetId = Long'
+      - path: simclusters/simclusters_v2/common/ModelVersions.scala
+        line: 34
+        line_end: 36
+        snippet: 'implicit def toModelVersion(modelVersionStr: String): ModelVersion = {'
+    confidence: high
+
+  - id: C034
+    topic: api-design
+    title: アクセス制御と個人データ種別をスキーマ定義に埋め込んでいる
+    summary: >-
+      Strato のカラム定義は fetch 操作の中に認証チェックと機能フラグによるゲートを
+      宣言的に書く。対応する Thrift の各フィールドには personalDataType の
+      アノテーションで個人データ種別が型定義に直接付いている。
+    takeaway: >-
+      プライバシー分類とアクセス制御を実装側の書き忘れに依存させず、
+      スキーマ層で強制する設計。一般的な Thrift/proto には無い付加価値。
+    evidence:
+      - path: under-the-hood/strato/columns/underTheHoodReport.strato
+        line: 8
+        line_end: 19
+        snippet: 'val fetchOp = Op.fetch[Key, View, Value] { ctx =>'
+      - path: under-the-hood/thrift/uth_serving.thrift
+        line: 81
+        snippet: 'personalDataType'
+    confidence: high
+
+  - id: C035
+    topic: code-quality
+    title: クラスタリングは別ドメインのライブラリ流用で全ペア計算
+    summary: >-
+      LouvainClusteringMethod はイベント検出用のライブラリを転用しており、
+      辺の計算は combinations(2) による全ペア類似度、つまり O(n^2) になっている。
+      候補集合が小さい前提だが、その制約はコード上に明示されていない。
+    takeaway: >-
+      汎用ライブラリの領域横断的な再利用は工数面では合理的だが、
+      計算量の前提が暗黙のまま残ると、入力規模が変わったときに事故になる。
+    evidence:
+      - path: simclusters/simclusters_v2/common/clustering/LouvainClusteringMethod.scala
+        line: 3
+        snippet: 'import com.twitter.eventdetection.common.louvain.LouvainDriver'
+      - path: simclusters/simclusters_v2/common/clustering/LouvainClusteringMethod.scala
+        line: 27
+        snippet: '.combinations(2)'
+    confidence: high
+
+  # ── OSS 公開物としての体裁（ビルド・テスト・ドキュメント）
+  - id: C036
+    topic: testing
+    title: Rust 442 ファイル中 389 ファイルはビルドファイルを持たない
+    summary: >-
+      Cargo.toml / BUILD / *.bazel を持つのは phoenix（.rs 49 件）と bdsm（同 4 件）だけで、
+      home-mixer（215）・visibility-filtering（63）・phoenix-rankall（32）・thunder（24）・
+      abuse-enforcement-service（27）・candidate-pipeline（11）・vm-ranker（10）には 1 件も無い。
+      リポジトリ全体に WORKSPACE ファイルも存在しない。
+    takeaway: >-
+      公開の主眼は「読ませて監査させること」であって、再現ビルドではない。
+      この repo を「動かして検証する」計画は最初から成立しない。
+    evidence:
+      - path: phoenix/Cargo.toml
+        line: 3
+        line_end: 4
+        snippet: '[workspace]'
+      - path: home-mixer/filters/muted_keyword_filter.rs
+        line: 1
+        line_end: 5
+        snippet: 'use crate::models::candidate::PostCandidate;'
+    confidence: high
+    notes: >-
+      実測: `git ls-files '*.rs' | wc -l` = 442、ビルドファイルを含む top-dir は phoenix と bdsm のみ、
+      `git ls-files | grep -c WORKSPACE` = 0。
+
+  - id: C037
+    topic: testing
+    title: テストは細かく書かれているが実行する手段が無い
+    summary: >-
+      muted_keyword_filter.rs は全 300 行のうち実装が 57 行、残り 243 行が 12 個のテストで、
+      unicode・大文字小文字・句読点・複数キーワードの境界値を網羅している。
+      それでも home-mixer に Cargo.toml が無いため cargo test はできない。
+      Rust の #[cfg(test)] を含むファイルは 165 件ある。
+    takeaway: >-
+      テストの「網羅性」と「実行可能性」は別軸。ここで公開されているのは前者だけで、
+      読み手はテストから意図を読めるが緑を確認できない。
+    evidence:
+      - path: home-mixer/filters/muted_keyword_filter.rs
+        line: 59
+        line_end: 65
+        snippet: '#[cfg(test)]'
+      - path: home-mixer/filters/muted_keyword_filter.rs
+        line: 85
+        line_end: 99
+        snippet: 'async fn test_no_muted_keywords() {'
+    confidence: high
+
+  - id: C038
+    topic: code-quality
+    title: Rust 13.6 万行に対しコメントは 103 行、TODO は 0 件
+    summary: >-
+      Rust ファイル全体（136,362 行）のうち行コメントは 103 行しかなく、比率は 0.08%。
+      doc コメントも実質無い。さらに TODO / FIXME / HACK は全言語・全ファイルで 0 件。
+    takeaway: >-
+      「TODO が 1 件も無い」は完成度の証拠というより、公開前に内部向けマーカーを
+      機械的に除去した痕跡と読むのが自然（除去工程の有無自体はコードからは確認できない）。
+      実装意図はロジックからしか読めない。
+    evidence:
+      - path: home-mixer/filters/muted_keyword_filter.rs
+        line: 20
+        line_end: 33
+        snippet: 'impl Filter<ScoredPostsQuery, PostCandidate> for MutedKeywordFilter {'
+    confidence: high
+    notes: >-
+      実測コマンド: `git ls-files '*.rs' | xargs grep -h -E '^[[:space:]]*//' | wc -l` = 103、
+      `git ls-files '*.rs' | xargs cat | wc -l` = 136362、
+      `git grep -I -n -E 'TODO|FIXME|HACK' | wc -l` = 0。
+
+  - id: C039
+    topic: architecture
+    title: Bazel の BUILD は社内モノレポの解決不能パスを参照したまま
+    summary: >-
+      botmaker の BUILD は finagle-internal/... など、このリポジトリに存在しないパスを
+      依存として列挙している。WORKSPACE も無いため、これらの BUILD は単体で解決できない。
+    takeaway: >-
+      Scala/Java 側のビルド設定は社内モノレポからの生の抜粋で、
+      公開にあたって自己完結させる作業はされていない。形式だけが残った資料に近い。
+    evidence:
+      - path: botmaker/src/scala/com/twitter/botmaker/BUILD
+        line: 9
+        line_end: 11
+        snippet: 'finagle-internal/mtls/src/main/scala/com/twitter/finagle/mtls/authentication'
+    confidence: high
+
+  - id: C040
+    topic: code-quality
+    title: テスト内に社内モノレポの相対パスが残っている
+    summary: >-
+      MediaModelProxyTest.scala は media-understanding/... で始まるパスを参照するが、
+      このリポジトリのトップレベルに media-understanding ディレクトリは存在しない。
+    takeaway: >-
+      OSS 化の際にテストのハードコードパスまでは調整されておらず、
+      この統合テストは実行すれば確実にファイルを見つけられない状態で公開されている。
+    evidence:
+      - path: media-model-proxy/integrationtest/src/test/scala/com/twitter/media_understanding/model_proxy/integrationtest/MediaModelProxyTest.scala
+        line: 30
+        line_end: 32
+        snippet: 'val modelsPath: String ='
+    confidence: high
+
+  - id: C041
+    topic: testing
+    title: Java 313 ファイルにテストが 1 件も無い
+    summary: >-
+      Java ファイルは botmaker 配下に 313 件あるが、@Test / org.junit を含むファイルは 0 件。
+      Rust は 165 ファイル、Scala は 19 件、Python は 8 件のテストを持つ。
+    takeaway: >-
+      4 言語構成の中で Java 層だけ検証手段が公開されていない。
+      ANTLR パーサを含むルールエンジンという重要度の高い箇所である点が気になる。
+    evidence:
+      - path: botmaker/src/java/com/twitter/botmaker/BUILD
+        line: 1
+        line_end: 9
+        snippet: 'java_library('
+    confidence: high
+    notes: >-
+      実測: `git grep -l -E '@Test|org\.junit' -- '*.java' | wc -l` = 0（対象 313 ファイル）。
+
+  - id: C042
+    topic: testing
+    title: 攻撃シナリオを明示したセキュリティテストがある
+    summary: >-
+      bdsm のテストは __reduce__ を使って任意コード実行を狙う悪意ある pickle を実際に組み立て、
+      safe_pickle_loads がそれを拒否することを検証している。
+      同じファイルに Kafka の TLS 証明書検証が常に有効であることを確かめるテストもある。
+    takeaway: >-
+      コメントもドキュメントも薄いこのリポジトリの中で、
+      「何を守っているか」が読むだけで分かる数少ない箇所。攻撃シナリオを書いたテストの good example。
+    evidence:
+      - path: bdsm/tests/test_pipeline_security.py
+        line: 14
+        line_end: 21
+        snippet: 'def test_rejects_arbitrary_globals():'
+    confidence: high
+
+  - id: C043
+    topic: code-quality
+    title: 新規に書かれた層と旧 Twitter 資産で公開品質に断層がある
+    summary: >-
+      phoenix は依存をバージョン固定した標準的な Python パッケージ定義を持ち、
+      Cargo のワークスペースも整備されている。一方 home-mixer や botmaker など旧 Twitter 由来の
+      モジュールはビルドファイルを欠くか、解決不能な内部パスを含む。
+    takeaway: >-
+      同じリポジトリの中に「新しく丁寧に作られた部分」と「読み物として投げ込まれた部分」が
+      同居している。どこが現役で手が入っているかの判断材料になる。
+    evidence:
+      - path: phoenix/pyproject.toml
+        line: 1
+        line_end: 9
+        snippet: 'X.AI Corp.'
+    confidence: high
+
+  - id: C044
+    topic: architecture
+    title: README の非公開ファイル節はビルド不能に触れていない
+    summary: >-
+      README の「What's not in this repo?」節は、非公開の理由として Grox の LLM プロンプトや
+      一部ルールを挙げる。Rust の大半にビルドファイルが無いことや、
+      Bazel BUILD が内部パス依存で解決できないことには言及がない。
+    takeaway: >-
+      公開ポリシーの説明は「意図的に隠した情報」の観点でのみ書かれており、
+      「公開はしたが動かせないコード」は透明性の対象外になっている。
+    evidence:
+      - path: README.md
+        line: 403
+        line_end: 407
+        snippet: 'there are a limited set of files not currently published in the repository'
+    confidence: high
+
+  - id: C045
+    topic: code-quality
+    title: 行動規範は 1 行だけ
+    summary: >-
+      CODE_OF_CONDUCT.md は全体で 1 行、"Be excellent to each other." のみ。
+      定型テンプレートも報告窓口も無い。
+    takeaway: >-
+      OSS としての体裁を整えるファイルは置かれているが、
+      ガバナンス文書としては機能しない形式的な設置に留まる。
+    evidence:
+      - path: CODE_OF_CONDUCT.md
+        line: 1
+        snippet: 'Be excellent to each other.'
+    confidence: high

@@ -7,11 +7,16 @@ source.lock            解析対象の commit（機械可読な唯一の正）
   │
   ├─ scripts/fetch-source.zsh   → vendor/x-algorithm を pinned SHA で取得（git 管理外）
   │
-analysis/factors.yaml  根拠台帳（成果物の本体）
+analysis/factors.yaml  根拠台帳①: 投稿者が操作可能なランキング要因
+analysis/code.yaml     根拠台帳②: コードそのもの（設計・実装技法）
   │
-  └─ scripts/verify-evidence.py → 台帳の path:line:snippet を vendor の実ファイルと照合
+  └─ scripts/verify-evidence.py → 両台帳の path:line:snippet を vendor の実ファイルと照合
                                   1 件でも不一致なら exit 1
 ```
+
+2 本の台帳はスキーマが違う（`factors.yaml` は `stage`/`author_controllable`/`direction`、
+`code.yaml` は `topic`/`takeaway`）が、**evidence の照合は同じ関数 1 つ**（`check_evidence`）を通る。
+台帳を足すときは `LEDGERS` に `LedgerSpec` を 1 つ加えるだけで、検証の厳しさは自動的に揃う。
 
 `make ci` = `fetch` → `verify`。CI ゲートはこの 1 本。
 
