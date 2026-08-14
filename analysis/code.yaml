@@ -10,21 +10,25 @@ observations:
   # ── パイプライン抽象（candidate-pipeline / home-mixer の配線）
   - id: C001
     topic: architecture
-    title: 段の順序は trait のデフォルト実装で固定されている
+    title: 段の順序は trait のデフォルト実装 1 箇所に集約されている
     summary: >-
       CandidatePipeline の execute_stages が
       QueryHydrator → Source → Hydrator → Filter → Scorer → Selector → PostSelection → SideEffect
       の順序をデフォルトメソッドとして持つ。個々のパイプライン実装は各段のコンポーネント配列を返すだけで、
-      順序そのものは上書きできない。
+      このリポジトリ内に execute_stages を上書きしている実装は無い
+      （Rust の仕様上は各 impl で上書き可能であり、禁止されているわけではない）。
     takeaway: >-
       「何を実行するか」と「どう実行するか」を分離したテンプレートメソッド。
-      パイプラインを増やすたびに順序ロジックを書き直す機会を消している。
+      パイプラインを増やすたびに順序ロジックを書き直す機会を、規約ではなく既定実装で消している。
     evidence:
       - path: candidate-pipeline/candidate_pipeline.rs
         line: 97
         line_end: 148
         snippet: 'let hydrated_query = self.hydrate_query(query).await;'
     confidence: high
+    notes: >-
+      実測: `grep -rn 'fn execute_stages' candidate-pipeline/ home-mixer/` は
+      trait 側の定義 1 件のみ（上書き実装 0 件）。
 
   - id: C002
     topic: concurrency
@@ -289,14 +293,21 @@ observations:
     summary: >-
       推論バッチサイズを候補集合の中から「実サイズ以上で最小のもの」に丸める select_bucket があり、
       バケットごとに永続バッファと warmup を持つ。
+      ただし実サイズが最大バケットを超えた場合は該当が無く、
+      最大バケット（実サイズより小さい値）をそのまま返すフォールバックになっている。
     takeaway: >-
       入力 shape が変わるたびに再コンパイルが走る JAX/XLA の性質に対する定石。
-      それを Rust 側ではなく Python のトレーナークラスに置いている点が構成上の特徴。
+      上限超過時に「実サイズ以上」の不変条件が破れる点は、
+      呼び出し側が事前にバッチを分割している前提に依存している。
     evidence:
       - path: phoenix/xrex/inference/model_runner.py
         line: 558
         line_end: 563
         snippet: 'def select_bucket(self, orig_batch_size: int) -> int:'
+      - path: phoenix/xrex/inference/model_runner.py
+        line: 558
+        line_end: 563
+        snippet: 'return buckets[-1]'
     confidence: high
 
   - id: C017
