@@ -1,0 +1,3 @@
+# 解析対象のピン留め（機械可読な唯一の正）。人間向けの説明は SOURCE.md。
+REPO_URL=https://github.com/xai-org/x-algorithm.git
+COMMIT=a389166f6cf5da70a286b568c87695d4dcdce3a1

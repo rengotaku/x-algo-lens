@@ -1,0 +1,220 @@
+# 根拠台帳 — 投稿者が操作可能なランキング要因
+#
+# 書き方・スキーマ・判定基準は analysis/README.md を参照。
+# path / line / snippet は source_ref の commit に対してのみ有効（make verify が照合する）。
+
+source_ref: a389166f6cf5da70a286b568c87695d4dcdce3a1
+
+factors:
+  - id: F001
+    name: エンゲージメント種別ごとの重み（正の側）
+    stage: scorer
+    author_controllable: indirect
+    direction: boost
+    summary: >-
+      スコアはエンゲージメント種別ごとの重み付き和で、種別によって既定値が一桁違う。
+      リプライ 5.0 / 引用 5.0 に対し、リポスト 1.0、いいね 0.5。
+      「いいねを集める」より「返信・引用させる」方が既定重みでは 10 倍効く。
+    evidence:
+      - path: home-mixer/params/param.rs
+        line: 282
+        snippet: 'param!(FavoriteWeight, f64, "rust_home_mixer_favorite_weight", 0.5);'
+      - path: home-mixer/params/param.rs
+        line: 283
+        snippet: 'param!(ReplyWeight, f64, "rust_home_mixer_reply_weight", 5.0);'
+      - path: home-mixer/params/param.rs
+        line: 296
+        snippet: 'param!(RetweetWeight, f64, "rust_home_mixer_retweet_weight", 1.0);'
+      - path: home-mixer/params/param.rs
+        line: 332
+        snippet: 'param!(QuoteWeight, f64, "rust_home_mixer_quote_weight", 5.0);'
+    confidence: high
+    notes: >-
+      これは param! マクロの「既定値」であり、本番の feature switch 値ではない。
+      本番で上書きされている可能性を排除できないため、比率の絶対視はしない。
+
+  - id: F002
+    name: 共有（リンクコピー / DM）の重みが最大級
+    stage: scorer
+    author_controllable: indirect
+    direction: boost
+    summary: >-
+      リンクコピーによる共有 20.0、DM 共有 5.0、通常の共有 2.0。
+      リンクコピー共有はリプライ(5.0)の 4 倍で、既定値としては全シグナル中で最も重い部類。
+      「タイムライン上で反応される」より「外に持ち出される」方が強く効く設計になっている。
+    evidence:
+      - path: home-mixer/params/param.rs
+        line: 325
+        line_end: 330
+        snippet: 'ShareViaCopyLinkWeight,'
+      - path: home-mixer/params/param.rs
+        line: 325
+        line_end: 330
+        snippet: '20.0'
+      - path: home-mixer/params/param.rs
+        line: 319
+        line_end: 324
+        snippet: 'ShareViaDmWeight,'
+      - path: home-mixer/params/param.rs
+        line: 318
+        snippet: 'param!(ShareWeight, f64, "rust_home_mixer_share_weight", 2.0);'
+    confidence: high
+    notes: F001 と同じく既定値。本番値は不明。
+
+  - id: F003
+    name: 相互フォロー間のリプライに加算ブースト
+    stage: scorer
+    author_controllable: direct
+    direction: boost
+    summary: >-
+      相互フォロー関係にある相手からのリプライには、リプライ重みに +15.0 のブーストが加算される。
+      同じ「返信1件」でも相互フォロー相手からのものは桁違いに価値が高い。
+      一方 dwell 側の同種ブーストは既定 0.0 で無効。
+    evidence:
+      - path: home-mixer/params/param.rs
+        line: 284
+        line_end: 289
+        snippet: 'BidirectionalFollowReplyWeightBoost,'
+      - path: home-mixer/params/param.rs
+        line: 284
+        line_end: 289
+        snippet: '15.0'
+      - path: home-mixer/params/param.rs
+        line: 290
+        line_end: 295
+        snippet: 'BidirectionalFollowDwellWeightBoost,'
+      - path: home-mixer/scorers/ranking_scorer.rs
+        line: 57
+        snippet: 'bidirectional_follow_reply_weight_boost: f64,'
+    confidence: high
+    notes: >-
+      ブーストの適用条件（相互フォロー判定の実体）は ranking_scorer.rs 側の適用箇所まで
+      追い切れていない。加算か置換かも未確認。F901 として調査タスク化する。
+
+  - id: F004
+    name: ネガティブフィードバックの重みは正のシグナルより桁違いに大きい
+    stage: scorer
+    author_controllable: direct
+    direction: suppress
+    summary: >-
+      通報 -234.0、ミュート -58.8、「興味がない」-43.2、ブロック -31.2。
+      いいね(0.5)・リプライ(5.0)と比べて絶対値が 1〜2 桁大きい。
+      発生頻度が低い前提で重み付けされているため、1 件のネガティブが多数の正シグナルを打ち消しうる。
+    evidence:
+      - path: home-mixer/params/param.rs
+        line: 442
+        snippet: 'param!(ReportWeight, f64, "rust_home_mixer_report_weight", -234.0);'
+      - path: home-mixer/params/param.rs
+        line: 436
+        line_end: 441
+        snippet: 'MuteAuthorWeight,'
+      - path: home-mixer/params/param.rs
+        line: 436
+        line_end: 441
+        snippet: '-58.8'
+      - path: home-mixer/params/param.rs
+        line: 424
+        line_end: 429
+        snippet: 'NotInterestedWeight,'
+      - path: home-mixer/params/param.rs
+        line: 430
+        line_end: 435
+        snippet: 'BlockAuthorWeight,'
+      - path: home-mixer/params/param.rs
+        line: 279
+        line_end: 281
+        snippet: 'negative feedback is overall rare'
+    confidence: high
+    notes: >-
+      コード中のコメントが「ネガティブフィードバックは全体として稀」という前提を明記している。
+      釣り・煽りで反応を集める戦略が、期待値としては割に合いにくい構造になっている。
+
+  - id: F005
+    name: フォロー外のリポスト・リプライは候補から除外される
+    stage: filter
+    author_controllable: direct
+    direction: gate
+    summary: >-
+      in_network が false の候補のうち、リポストまたはリプライであるものは丸ごと除外される。
+      加えて、祖先ツイート(ancestors)が空のリプライも除外される。
+      フォロー外へ届けたいなら、リポスト・リプライではなく単独ポストか引用である必要がある。
+    evidence:
+      - path: home-mixer/filters/oon_retweet_reply_filter.rs
+        line: 13
+        line_end: 18
+        snippet: '(c.in_network == Some(false) && (is_retweet || is_reply))'
+      - path: home-mixer/filters/oon_retweet_reply_filter.rs
+        line: 13
+        line_end: 18
+        snippet: '|| (is_reply && c.ancestors.is_empty())'
+    confidence: high
+    notes: >-
+      このフィルタが For You パイプラインのどの段階で実際に配線されているかは
+      candidate_pipeline 側の確認が必要（F902）。
+
+  - id: F006
+    name: 候補は最大経過時間で足切りされる
+    stage: filter
+    author_controllable: indirect
+    direction: gate
+    summary: >-
+      投稿 ID から算出した経過時間が max_age を超える候補は除外される。
+      経過時間を算出できない場合は unwrap_or(false) で「除外」に倒れる（fail-closed）。
+      max_age は設定値で、コード上に固定値は無い。
+    evidence:
+      - path: home-mixer/filters/age_filter.rs
+        line: 16
+        line_end: 20
+        snippet: '.map(|age| age <= self.max_age)'
+      - path: home-mixer/filters/age_filter.rs
+        line: 16
+        line_end: 20
+        snippet: '.unwrap_or(false)'
+    confidence: high
+    notes: max_age の実値は本リポジトリからは確定できない。
+
+  - id: F007
+    name: スコアに使われるシグナルの全体像
+    stage: scorer
+    author_controllable: indirect
+    direction: neutral
+    summary: >-
+      ScoringWeights 構造体が、スコアリングで参照されるシグナルの網羅リストになっている。
+      いいね・返信・リポスト・引用のほか、写真展開、動画再生、リンク遷移、プロフィールクリック、
+      滞在時間、共有、著者フォロー、未閲覧ボーナス、および 5 種のネガティブを持つ。
+      「投稿者が操作可能な要因」の候補集合は、まずこの一覧に含まれるかで足切りできる。
+    evidence:
+      - path: home-mixer/scorers/ranking_scorer.rs
+        line: 18
+        snippet: 'pub(crate) struct ScoringWeights {'
+      - path: home-mixer/scorers/ranking_scorer.rs
+        line: 19
+        line_end: 59
+        snippet: 'not_interested: f64,'
+      - path: home-mixer/scorers/ranking_scorer.rs
+        line: 19
+        line_end: 59
+        snippet: 'post_unexplored: f64,'
+    confidence: high
+
+  - id: F008
+    name: プロフィールクリックと滞在時間の既定重みは 0
+    stage: scorer
+    author_controllable: indirect
+    direction: neutral
+    summary: >-
+      シグナルとして収集・定義はされているが、ProfileClickWeight と DwellWeight の既定値は 0.0。
+      「プロフィールに飛ばせば伸びる」「滞在時間を稼げば伸びる」は、
+      少なくとも既定値のままではスコアに寄与しない。
+    evidence:
+      - path: home-mixer/params/param.rs
+        line: 311
+        line_end: 316
+        snippet: 'ProfileClickWeight,'
+      - path: home-mixer/params/param.rs
+        line: 331
+        snippet: 'param!(DwellWeight, f64, "rust_home_mixer_dwell_weight", 0.0);'
+    confidence: medium
+    notes: >-
+      既定 0.0 は「使っていない」ではなく「本番で feature switch により有効化されている」可能性がある。
+      cont_dwell_time など別系統の滞在系シグナルも存在するため、断定はしない。

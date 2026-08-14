@@ -1,0 +1,7 @@
+# 解析対象の clone（source.lock からいつでも再取得できる）
+vendor
+vendor/
+
+__pycache__/
+*.pyc
+.claude/settings.local.json
