@@ -160,7 +160,8 @@ factors:
     summary: >-
       投稿 ID から算出した経過時間が max_age を超える候補は除外される。
       経過時間を算出できない場合は unwrap_or(false) で「除外」に倒れる（fail-closed）。
-      max_age は設定値で、コード上に固定値は無い。
+      Phoenix パイプラインに配線されている AgeFilter には params::MAX_POST_AGE が渡されており、
+      その値は 48 時間（48 * 60 * 60 秒）。
     evidence:
       - path: home-mixer/filters/age_filter.rs
         line: 16
@@ -170,8 +171,18 @@ factors:
         line: 16
         line_end: 20
         snippet: '.unwrap_or(false)'
+      - path: home-mixer/params/config.rs
+        line: 36
+        snippet: 'pub const MAX_POST_AGE: u64 = 48 * 60 * 60;'
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 347
+        snippet: 'Box::new(AgeFilter::new(Duration::from_secs(params::MAX_POST_AGE))),'
     confidence: high
-    notes: max_age の実値は本リポジトリからは確定できない。
+    notes: >-
+      当初この notes には「max_age の実値は確定できない」と書いていたが誤り。
+      定数定義と AgeFilter への配線箇所の両方が公開されている（#8 で訂正）。
+      なお AgeFilter 自体は max_age を引数に取る汎用フィルタなので、
+      他のパイプラインに別の値で配線されている可能性は排除できない。
 
   - id: F007
     name: スコアに使われるシグナルの全体像
@@ -218,3 +229,107 @@ factors:
     notes: >-
       既定 0.0 は「使っていない」ではなく「本番で feature switch により有効化されている」可能性がある。
       cont_dwell_time など別系統の滞在系シグナルも存在するため、断定はしない。
+
+  # ── 絞り込みの量（投稿者が動かせるレバーではないが、他の要因を読むための分母になる）
+  - id: F009
+    name: 1 ソースが返す候補数の上限は数百件規模
+    stage: source
+    author_controllable: none
+    direction: gate
+    summary: >-
+      SimClusters ソースは内部で最大 10,000 件を走査し、返すのは最大 800 件。
+      走査するクラスタ数は 50 まで、候補は 48 時間以内に限られる。
+      候補ソースは 18 個あるが、合計でいくつ集まるかはコードからは導けない。
+    evidence:
+      - path: home-mixer/sources/simclusters_source.rs
+        line: 24
+        snippet: 'const MAX_SANN_CANDIDATES: usize = 10_000;'
+      - path: home-mixer/sources/simclusters_source.rs
+        line: 25
+        snippet: 'const MAX_RESULTS: usize = 800;'
+      - path: home-mixer/sources/simclusters_source.rs
+        line: 32
+        snippet: 'const ANN_MAX_SCAN_CLUSTERS: i32 = 50;'
+      - path: home-mixer/sources/simclusters_source.rs
+        line: 33
+        snippet: 'const ANN_MAX_POST_CANDIDATE_AGE_HOURS: i32 = 48;'
+    confidence: high
+    notes: >-
+      これは 18 ソースのうち 1 つの値であって、入口の総数ではない。
+      重複排除も後段に入るため、合計を推定してはいけない。
+
+  - id: F010
+    name: Phoenix パイプラインは 16 個のフィルタを直列で通す
+    stage: filter
+    author_controllable: none
+    direction: gate
+    summary: >-
+      重複排除・経過時間・自分の投稿・フォロー外 RT/リプライ・NSFW・既読・既配信・
+      ミュートキーワード・ブロック関係・動画・トピック・新規ユーザー・ホールドアウトが
+      この順に並び、どれか 1 つで落ちればそこで終わる。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 344
+        snippet: 'let filters: Vec<Box<dyn Filter<ScoredPostsQuery, PostCandidate>>> = vec!['
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 345
+        snippet: 'Box::new(DropDuplicatesFilter),'
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 361
+        snippet: 'Box::new(InventoryHoldoutFilter),'
+    confidence: high
+    notes: >-
+      Phoenix パイプラインの配線であって、For You / Following の全経路ではない（#3 で確認する）。
+
+  - id: F011
+    name: セレクタを通るのはスコア上位 50 件だけ
+    stage: selector
+    author_controllable: none
+    direction: gate
+    summary: >-
+      TopKScoreSelector はスコア降順に並べ、上位 50 件だけを選択済みとして残す。
+      スコアが無い候補は負の無限大として扱われ、最後尾に落ちる。
+    evidence:
+      - path: home-mixer/params/config.rs
+        line: 17
+        snippet: 'pub const TOP_K_CANDIDATES_TO_SELECT: usize = 50;'
+      - path: home-mixer/selectors/top_k_score_selector.rs
+        line: 12
+        line_end: 14
+        snippet: 'Some(params::TOP_K_CANDIDATES_TO_SELECT)'
+      - path: home-mixer/selectors/top_k_score_selector.rs
+        line: 9
+        line_end: 11
+        snippet: 'candidate.score.unwrap_or(f64::NEG_INFINITY)'
+    confidence: high
+
+  - id: F012
+    name: For You が 1 回に返す枠は 47、うち投稿は 35
+    stage: selector
+    author_controllable: none
+    direction: gate
+    summary: >-
+      For You パイプラインの result_size は FOR_YOU_MAX_RESULT_SIZE で、
+      その内訳は投稿 35 枠 + フィードモジュール 4 枠 + Jetfuel フレーム 8 枠。
+      50 件まで絞られた候補が、最終的にこの枠を争う。
+    evidence:
+      - path: home-mixer/params/config.rs
+        line: 18
+        snippet: 'pub const RESULT_SIZE: usize = 35;'
+      - path: home-mixer/params/config.rs
+        line: 19
+        snippet: 'pub const FEED_MODULE_SLOTS: usize = 4;'
+      - path: home-mixer/params/config.rs
+        line: 20
+        snippet: 'pub const MAX_JETFUEL_FRAMES_PER_RESPONSE: usize = 8;'
+      - path: home-mixer/params/config.rs
+        line: 21
+        line_end: 22
+        snippet: 'RESULT_SIZE + FEED_MODULE_SLOTS + MAX_JETFUEL_FRAMES_PER_RESPONSE;'
+      - path: home-mixer/candidate_pipeline/for_you_candidate_pipeline.rs
+        line: 323
+        line_end: 324
+        snippet: 'params::FOR_YOU_MAX_RESULT_SIZE'
+    confidence: high
+    notes: >-
+      1 レスポンスあたりの枠であって、1 日に表示される総数ではない。
