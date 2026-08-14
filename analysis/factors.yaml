@@ -232,21 +232,30 @@ factors:
 
   # ── 絞り込みの量（投稿者が動かせるレバーではないが、他の要因を読むための分母になる）
   - id: F009
-    name: 1 ソースが返す候補数の上限は数百件規模
+    name: 1 ソースが返す候補は最終的に数百件に切り詰められる
     stage: source
     author_controllable: none
     direction: gate
     summary: >-
-      SimClusters ソースは内部で最大 10,000 件を走査し、返すのは最大 800 件。
-      走査するクラスタ数は 50 まで、候補は 48 時間以内に限られる。
-      候補ソースは 18 個あるが、合計でいくつ集まるかはコードからは導けない。
+      SimClusters ソースは利用者のシグナルごとに ANN 検索をかける。
+      1 シグナルあたり 10,000 / シグナル数 件までを取り、インターリーブしたうえで 800 件に切る。
+      ANN リクエスト自体は 1 回あたり最大 200 件・走査クラスタ 50・投稿は 48 時間以内を指定する。
     evidence:
       - path: home-mixer/sources/simclusters_source.rs
-        line: 24
-        snippet: 'const MAX_SANN_CANDIDATES: usize = 10_000;'
+        line: 101
+        snippet: 'let max_per_query = (MAX_SANN_CANDIDATES / signal_ids.len()).max(1);'
+      - path: home-mixer/sources/simclusters_source.rs
+        line: 115
+        snippet: '.take(max_per_query)'
+      - path: home-mixer/sources/simclusters_source.rs
+        line: 121
+        snippet: 'interleaved.truncate(MAX_RESULTS);'
       - path: home-mixer/sources/simclusters_source.rs
         line: 25
         snippet: 'const MAX_RESULTS: usize = 800;'
+      - path: home-mixer/sources/simclusters_source.rs
+        line: 29
+        snippet: 'const ANN_MAX_NUM_RESULTS: i32 = 200;'
       - path: home-mixer/sources/simclusters_source.rs
         line: 32
         snippet: 'const ANN_MAX_SCAN_CLUSTERS: i32 = 50;'
@@ -255,18 +264,46 @@ factors:
         snippet: 'const ANN_MAX_POST_CANDIDATE_AGE_HOURS: i32 = 48;'
     confidence: high
     notes: >-
-      これは 18 ソースのうち 1 つの値であって、入口の総数ではない。
-      重複排除も後段に入るため、合計を推定してはいけない。
+      MAX_SANN_CANDIDATES (10,000) は「シグナル横断で取り込む合計の上限」であって、
+      ANN が内部で走査する件数ではない（当初そう書いていたが誤り。#8 の codex レビューで訂正）。
+      またこれは 18 ソースのうち 1 つの値であり、入口の総数ではない。合計を推定してはいけない。
 
   - id: F010
-    name: Phoenix パイプラインは 16 個のフィルタを直列で通す
+    name: For You は最大 2800 件のスコア済み投稿を候補として受け取りうる
+    stage: source
+    author_controllable: none
+    direction: gate
+    summary: >-
+      For You パイプラインの候補ソースには ScoredPostsSource が含まれる。
+      そのスコア済み投稿を作る Phoenix Scores パイプラインの result_size は 2800。
+      For You にはこれに加えて広告・おすすめユーザー・プロンプト・フレーム等のソースが並ぶ。
+    evidence:
+      - path: home-mixer/candidate_pipeline/for_you_candidate_pipeline.rs
+        line: 195
+        snippet: 'Box::new(ScoredPostsSource {'
+      - path: home-mixer/candidate_pipeline/phoenix_scores_pipeline.rs
+        line: 78
+        snippet: 'const RESULT_SIZE: usize = 2800;'
+      - path: home-mixer/candidate_pipeline/phoenix_scores_pipeline.rs
+        line: 445
+        line_end: 447
+        snippet: 'RESULT_SIZE'
+    confidence: medium
+    notes: >-
+      2800 は Phoenix Scores パイプラインの上限であって、
+      For You が実際に受け取る件数でも、そこに至るまでの経路の全容でもない。
+      両パイプラインの接続の詳細は #3 で確認する。
+
+  - id: F013
+    name: Phoenix パイプラインには 17 個のフィルタが直列に並ぶ
     stage: filter
     author_controllable: none
     direction: gate
     summary: >-
-      重複排除・経過時間・自分の投稿・フォロー外 RT/リプライ・NSFW・既読・既配信・
-      ミュートキーワード・ブロック関係・動画・トピック・新規ユーザー・ホールドアウトが
-      この順に並び、どれか 1 つで落ちればそこで終わる。
+      重複排除・コアデータ・経過時間・自分の投稿・フォロー外 RT/リプライ・NSFW・
+      リポスト重複・購読対象外・既読 2 種・既配信・ミュートキーワード・ブロック関係・
+      動画・トピック・新規ユーザー・ホールドアウトの 17 個がこの順に並ぶ。
+      どれか 1 つで落ちればそこで終わる。
     evidence:
       - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
         line: 344
@@ -277,9 +314,17 @@ factors:
       - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
         line: 361
         snippet: 'Box::new(InventoryHoldoutFilter),'
+      - path: candidate-pipeline/filter.rs
+        line: 21
+        line_end: 23
+        snippet: 'fn enable(&self, _query: &Q) -> bool {'
     confidence: high
     notes: >-
-      Phoenix パイプラインの配線であって、For You / Following の全経路ではない（#3 で確認する）。
+      当初 16 個と書いていたが数え落とし（#8 の codex レビューで訂正）。実測は
+      `sed -n '345,361p' ... | grep -c 'Box::new'` = 17。
+      各フィルタは enable(query) を持つため、条件によっては評価されない。
+      「常に 17 個すべてを通る」とは言えない。
+      これは Phoenix パイプラインの配線であって、For You / Following の全経路ではない（#3）。
 
   - id: F011
     name: セレクタを通るのはスコア上位 50 件だけ
@@ -304,24 +349,18 @@ factors:
     confidence: high
 
   - id: F012
-    name: For You が 1 回に返す枠は 47、うち投稿は 35
+    name: For You が 1 回のレスポンスで返す上限は 47 件
     stage: selector
     author_controllable: none
     direction: gate
     summary: >-
-      For You パイプラインの result_size は FOR_YOU_MAX_RESULT_SIZE で、
-      その内訳は投稿 35 枠 + フィードモジュール 4 枠 + Jetfuel フレーム 8 枠。
-      50 件まで絞られた候補が、最終的にこの枠を争う。
+      For You パイプラインの result_size は FOR_YOU_MAX_RESULT_SIZE = 35 + 4 + 8 = 47。
+      35 は広告ブレンダーが投稿と広告を混ぜた列を切るサイズで、
+      8 は Jetfuel フレームの上限。上位 50 件まで絞られた候補がこの枠を争う。
     evidence:
       - path: home-mixer/params/config.rs
         line: 18
         snippet: 'pub const RESULT_SIZE: usize = 35;'
-      - path: home-mixer/params/config.rs
-        line: 19
-        snippet: 'pub const FEED_MODULE_SLOTS: usize = 4;'
-      - path: home-mixer/params/config.rs
-        line: 20
-        snippet: 'pub const MAX_JETFUEL_FRAMES_PER_RESPONSE: usize = 8;'
       - path: home-mixer/params/config.rs
         line: 21
         line_end: 22
@@ -330,6 +369,18 @@ factors:
         line: 323
         line_end: 324
         snippet: 'params::FOR_YOU_MAX_RESULT_SIZE'
+      - path: home-mixer/ads/partition_organic_blender.rs
+        line: 190
+        snippet: 'items.truncate(RESULT_SIZE);'
+      - path: home-mixer/frames/plan.rs
+        line: 51
+        snippet: 'planned.truncate(MAX_JETFUEL_FRAMES_PER_RESPONSE);'
     confidence: high
     notes: >-
-      1 レスポンスあたりの枠であって、1 日に表示される総数ではない。
+      当初「投稿 35 枠 + モジュール 4 枠 + フレーム 8 枠」と内訳を断定していたが誤り
+      （#8 の codex レビューで訂正）。35 は投稿専用枠ではなく投稿と広告を混ぜた列の長さで、
+      さらに Who to Follow・プロンプト・アンケート・Push to Home も差し込まれる。
+      FEED_MODULE_SLOTS (4) は config.rs の合計式以外どこからも参照されていない
+      （実測: `grep -rn FEED_MODULE_SLOTS home-mixer/ | grep -v params/config.rs` = 0 件）ため、
+      「モジュール 4 枠」という配分の根拠はコードには無い。
+      また 1 レスポンスあたりの上限であって、1 日に表示される総数ではない。
