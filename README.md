@@ -16,8 +16,15 @@ feature switch の本番値・リアルタイムのユーザー特徴量は含�
 
 ## 中核: 根拠台帳（evidence ledger）
 
-解析結果は散文ではなく `analysis/factors.yaml` に構造化して置く。1 要因 = 1 エントリで、
+解析結果は散文ではなく YAML の台帳に構造化して置く。1 エントリは
 必ず `path` / `line` / `snippet`（その行に実在する文字列）を持つ。
+
+台帳は観点ごとに 2 本ある。
+
+| ファイル | 対象 | 問い |
+|---|---|---|
+| `analysis/factors.yaml` | 投稿者が操作可能なランキング要因 | この投稿はどう扱われるか |
+| `analysis/code.yaml` | コードそのもの（設計・実装技法） | この実装はどう作られているか |
 
 `make verify` が、台帳の全 evidence を**ピン留めした commit の実ファイルと突き合わせて検証**する。
 snippet が一致しない・行が存在しないエントリが 1 件でもあれば **exit 1**。
@@ -36,7 +43,8 @@ make ci       # fetch + verify
 ## ディレクトリ
 
 ```
-analysis/factors.yaml   根拠台帳（本体）
+analysis/factors.yaml   根拠台帳①: 投稿者が操作可能なランキング要因
+analysis/code.yaml      根拠台帳②: コードそのものの観察
 analysis/README.md      台帳の書き方・スキーマ・判定基準
 scripts/                取得と検証
 docs/ARCHITECTURE.md    解析対象パイプラインの地図
