@@ -240,6 +240,7 @@ factors:
       SimClusters ソースは利用者のシグナルごとに ANN 検索をかける。
       1 シグナルあたり 10,000 / シグナル数 件までを取り、インターリーブしたうえで 800 件に切る。
       ANN リクエスト自体は 1 回あたり最大 200 件・走査クラスタ 50・投稿は 48 時間以内を指定する。
+      これは内側の Phoenix 候補パイプライン（F010）に入る 7 ソースのうちの 1 つ。
     evidence:
       - path: home-mixer/sources/simclusters_source.rs
         line: 101
@@ -269,30 +270,31 @@ factors:
       またこれは 18 ソースのうち 1 つの値であり、入口の総数ではない。合計を推定してはいけない。
 
   - id: F010
-    name: For You は最大 2800 件のスコア済み投稿を候補として受け取りうる
+    name: For You は 2 段のパイプラインが入れ子になっている
     stage: source
     author_controllable: none
-    direction: gate
+    direction: neutral
     summary: >-
-      For You パイプラインの候補ソースには ScoredPostsSource が含まれる。
-      そのスコア済み投稿を作る Phoenix Scores パイプラインの result_size は 2800。
-      For You にはこれに加えて広告・おすすめユーザー・プロンプト・フレーム等のソースが並ぶ。
+      For You パイプラインの候補ソース ScoredPostsSource は、内側で
+      Phoenix 候補パイプラインを丸ごと 1 本実行してその結果を受け取る。
+      投稿候補の収集・足切り・採点・絞り込みは内側で完結し、
+      外側は「絞り込み済みの投稿」と広告・おすすめユーザー・プロンプト等を混ぜるだけ。
     evidence:
       - path: home-mixer/candidate_pipeline/for_you_candidate_pipeline.rs
         line: 195
         snippet: 'Box::new(ScoredPostsSource {'
-      - path: home-mixer/candidate_pipeline/phoenix_scores_pipeline.rs
-        line: 78
-        snippet: 'const RESULT_SIZE: usize = 2800;'
-      - path: home-mixer/candidate_pipeline/phoenix_scores_pipeline.rs
-        line: 445
-        line_end: 447
-        snippet: 'RESULT_SIZE'
-    confidence: medium
+      - path: home-mixer/sources/scored_posts_source.rs
+        line: 15
+        line_end: 19
+        snippet: '.run_pipeline(query.clone())'
+      - path: home-mixer/scored_posts_server.rs
+        line: 26
+        snippet: 'phoenix_candidate_pipeline: Arc<PhoenixCandidatePipeline>,'
+    confidence: high
     notes: >-
-      2800 は Phoenix Scores パイプラインの上限であって、
-      For You が実際に受け取る件数でも、そこに至るまでの経路の全容でもない。
-      両パイプラインの接続の詳細は #3 で確認する。
+      当初この枠に「For You は最大 2800 件を受け取りうる」と書いていたが誤り
+      （#8 の codex レビューで訂正）。2800 は別系統の Phoenix Scores パイプラインの定数で、
+      ScoredPostsSource が呼ぶのは PhoenixCandidatePipeline のほう。
 
   - id: F013
     name: Phoenix パイプラインには 17 個のフィルタが直列に並ぶ
@@ -324,17 +326,22 @@ factors:
       `sed -n '345,361p' ... | grep -c 'Box::new'` = 17。
       各フィルタは enable(query) を持つため、条件によっては評価されない。
       「常に 17 個すべてを通る」とは言えない。
-      これは Phoenix パイプラインの配線であって、For You / Following の全経路ではない（#3）。
+      これは内側の Phoenix 候補パイプラインの配線であって、Following 等の全経路ではない（#3）。
 
   - id: F011
-    name: セレクタを通るのはスコア上位 50 件だけ
+    name: 内側パイプラインはスコア上位 50 に絞り、さらに 35 件に切って返す
     stage: selector
     author_controllable: none
     direction: gate
     summary: >-
-      TopKScoreSelector はスコア降順に並べ、上位 50 件だけを選択済みとして残す。
-      スコアが無い候補は負の無限大として扱われ、最後尾に落ちる。
+      Phoenix 候補パイプラインは TopKScoreSelector でスコア降順の上位 50 件を選び、
+      そのあとパイプライン側の result_size でさらに 35 件に切る。
+      絞り込みが 2 段あるのは、選択後のフィルタで減った分を見込んでいるため。
+      スコアの無い候補は負の無限大として扱われ最後尾に落ちる。
     evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 398
+        snippet: 'let selector = TopKScoreSelector;'
       - path: home-mixer/params/config.rs
         line: 17
         snippet: 'pub const TOP_K_CANDIDATES_TO_SELECT: usize = 50;'
@@ -346,6 +353,14 @@ factors:
         line: 9
         line_end: 11
         snippet: 'candidate.score.unwrap_or(f64::NEG_INFINITY)'
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 956
+        line_end: 957
+        snippet: 'params::RESULT_SIZE'
+      - path: candidate-pipeline/candidate_pipeline.rs
+        line: 125
+        line_end: 127
+        snippet: 'final_candidates.split_off(self.result_size().min(final_candidates.len()));'
     confidence: high
 
   - id: F012
@@ -355,8 +370,8 @@ factors:
     direction: gate
     summary: >-
       For You パイプラインの result_size は FOR_YOU_MAX_RESULT_SIZE = 35 + 4 + 8 = 47。
-      35 は広告ブレンダーが投稿と広告を混ぜた列を切るサイズで、
-      8 は Jetfuel フレームの上限。上位 50 件まで絞られた候補がこの枠を争う。
+      35 は広告ブレンダーが投稿と広告を混ぜた列を切るサイズで、8 は Jetfuel フレームの上限。
+      ここで混ぜられる投稿は、内側パイプラインが既に 35 件まで絞ったもの（F011）。
     evidence:
       - path: home-mixer/params/config.rs
         line: 18
