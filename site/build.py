@@ -187,48 +187,6 @@ def series_nav(current):
     return '<nav class="series">' + ''.join(bits) + '</nav>'
 
 
-def ipo_svg(uid, inp, proc_title, proc_steps, out, note=''):
-    """Input / Process / Output を明示する共通の図。"""
-    steps = ''.join(
-        f'<text class="s-label" x="450" y="{146 + i * 19}" text-anchor="middle" font-size="11.5" fill="currentColor">{esc(s)}</text>'
-        for i, s in enumerate(proc_steps))
-    h = 176 + max(len(proc_steps), 2) * 19 + (26 if note else 0)
-    mid = 100
-    note_el = (f'<text class="s-label muted" x="20" y="{h - 10}" font-size="11.5">{esc(note)}</text>'
-               if note else '')
-    return f"""<svg viewBox="0 0 900 {h}" role="img" aria-label="この段の入力・処理・出力">
-          <defs>
-            <marker id="ipo-{uid}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M 0 1 L 9 5 L 0 9 z" fill="currentColor" />
-            </marker>
-          </defs>
-          <text class="s-mono" x="20" y="24" font-size="11" letter-spacing="2" style="fill: var(--ink-3)">INPUT</text>
-          <text class="s-mono" x="450" y="24" font-size="11" letter-spacing="2" text-anchor="middle" style="fill: var(--accent)">PROCESS</text>
-          <text class="s-mono" x="880" y="24" font-size="11" letter-spacing="2" text-anchor="end" style="fill: var(--ink-3)">OUTPUT</text>
-
-          <rect x="20" y="40" width="220" height="{h - 76 - (26 if note else 0)}" rx="3" class="stroke faint" stroke-width="1.25" />
-          <rect x="300" y="40" width="300" height="{h - 76 - (26 if note else 0)}" rx="3" class="stroke" stroke-width="1.5" style="color: var(--accent)" />
-          <rect x="660" y="40" width="220" height="{h - 76 - (26 if note else 0)}" rx="3" class="stroke faint" stroke-width="1.25" />
-
-          <text class="s-label" x="130" y="{mid - 4}" text-anchor="middle" font-size="13" fill="currentColor">{esc(inp[0])}</text>
-          <text class="s-label muted" x="130" y="{mid + 16}" text-anchor="middle" font-size="11">{esc(inp[1])}</text>
-
-          <text class="s-label" x="450" y="{mid - 24}" text-anchor="middle" font-size="13.5" style="fill: var(--accent)">{esc(proc_title)}</text>
-          {steps}
-
-          <text class="s-label" x="770" y="{mid - 4}" text-anchor="middle" font-size="13" fill="currentColor">{esc(out[0])}</text>
-          <text class="s-label muted" x="770" y="{mid + 16}" text-anchor="middle" font-size="11">{esc(out[1])}</text>
-
-          <g class="stroke" stroke-width="1.5" marker-end="url(#ipo-{uid})">
-            <line x1="240" y1="{mid}" x2="296" y2="{mid}" />
-            <line x1="600" y1="{mid}" x2="656" y2="{mid}" />
-          </g>
-          {note_el}
-        </svg>"""
-
-
-
-# ── アイコン（インライン SVG の図形のみ。意味を持つものだけ描く）
 def _person(cx, cy, r=4.2):
     return (f'<circle cx="{cx}" cy="{cy - 6}" r="{r}" />'
             f'<path d="M {cx - 7.5} {cy + 8} a 7.5 7.5 0 0 1 15 0" />')
@@ -297,77 +255,269 @@ def icon_pile(cx, cy):
               f'stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 3" opacity=".5" />')
 
 
-def ipo_sources_svg():
-    """候補ソース段の Input / Process / Output。アイコンと語で内容を示す。
 
-    文字は必ず所属する箱（IN 20-250 / PR 310-590 / OU 650-880）の内側に収める。
+# ── 追加アイコン（意味を持つものだけ。装飾は描かない）
+def icon_card_blank(cx, cy):
+    """属性がまだ無い候補 = 中身が破線のカード。"""
+    return (f'<g class="stroke" stroke-width="1.4">'
+            f'<rect x="{cx - 13}" y="{cy - 10}" width="26" height="20" rx="2.5" /></g>'
+            f'<g class="stroke faint" stroke-width="1" stroke-dasharray="3 2">'
+            f'<line x1="{cx - 8}" y1="{cy - 2}" x2="{cx + 8}" y2="{cy - 2}" />'
+            f'<line x1="{cx - 8}" y1="{cy + 4}" x2="{cx + 2}" y2="{cy + 4}" /></g>')
+
+
+def icon_card_filled(cx, cy):
+    """属性が付いた候補 = 中身が実線 + 印。"""
+    return (f'<g class="stroke" stroke-width="1.4">'
+            f'<rect x="{cx - 13}" y="{cy - 10}" width="26" height="20" rx="2.5" /></g>'
+            f'<g class="stroke" stroke-width="1.1">'
+            f'<line x1="{cx - 8}" y1="{cy - 2}" x2="{cx + 8}" y2="{cy - 2}" />'
+            f'<line x1="{cx - 8}" y1="{cy + 4}" x2="{cx + 2}" y2="{cy + 4}" /></g>'
+            f'<circle cx="{cx + 9}" cy="{cy - 7}" r="3" fill="currentColor" />')
+
+
+def icon_dup(cx, cy):
+    """重複 = 同じカードが 2 枚重なっている。"""
+    return (f'<g class="stroke" stroke-width="1.3">'
+            f'<rect x="{cx - 13}" y="{cy - 11}" width="22" height="17" rx="2.5" opacity=".5" />'
+            f'<rect x="{cx - 7}" y="{cy - 5}" width="22" height="17" rx="2.5" /></g>')
+
+
+def icon_service(cx, cy):
+    """外部サービスへの問い合わせ = 積み重ねたノードと往復の矢印。"""
+    return (f'<g class="stroke" stroke-width="1.3">'
+            f'<rect x="{cx - 12}" y="{cy - 10}" width="24" height="7" rx="2" />'
+            f'<rect x="{cx - 12}" y="{cy + 1}" width="24" height="7" rx="2" /></g>'
+            f'<circle cx="{cx - 7}" cy="{cy - 6.5}" r="1.4" fill="currentColor" />'
+            f'<circle cx="{cx - 7}" cy="{cy + 4.5}" r="1.4" fill="currentColor" />')
+
+
+def icon_sieve(cx, cy):
+    """足切り = 漏斗から 1 つ落ちる。"""
+    return (f'<g class="stroke" stroke-width="1.4">'
+            f'<path d="M {cx - 12} {cy - 9} h 24 l -8 10 v 7 l -8 4 v -11 z" /></g>'
+            f'<path d="M {cx + 8} {cy + 6} l 6 6 M {cx + 14} {cy + 6} l -6 6" '
+            f'class="stroke" stroke-width="1.6" style="color: var(--suppress)" />')
+
+
+def icon_eye_off(cx, cy):
+    """閲覧者の都合で見えない = 目に斜線。"""
+    return (f'<g class="stroke" stroke-width="1.3">'
+            f'<path d="M {cx - 12} {cy} q 12 -9 24 0 q -12 9 -24 0 z" />'
+            f'<circle cx="{cx}" cy="{cy}" r="3" /></g>'
+            f'<line x1="{cx - 11}" y1="{cy + 8}" x2="{cx + 11}" y2="{cy - 8}" '
+            f'class="stroke" stroke-width="1.6" />')
+
+
+def icon_flask(cx, cy):
+    """実験・整合の都合 = フラスコ。"""
+    return (f'<g class="stroke" stroke-width="1.4">'
+            f'<path d="M {cx - 4} {cy - 10} v 6 l -7 12 h 22 l -7 -12 v -6 z" />'
+            f'<line x1="{cx - 6}" y1="{cy - 10}" x2="{cx + 6}" y2="{cy - 10}" /></g>')
+
+
+def icon_cards_fewer(cx, cy):
+    """絞られた候補 = 少数のカード。"""
+    return (f'<g class="stroke" stroke-width="1.3">'
+            f'<rect x="{cx - 22}" y="{cy - 12}" width="18" height="24" rx="2.5" opacity=".45" />'
+            f'<rect x="{cx - 1}" y="{cy - 12}" width="18" height="24" rx="2.5" /></g>')
+
+
+def icon_model(cx, cy):
+    """外部モデル = 端子の付いたチップ。"""
+    pins = ''.join(f'<line x1="{cx + dx}" y1="{cy - 13}" x2="{cx + dx}" y2="{cy - 9}" />'
+                   f'<line x1="{cx + dx}" y1="{cy + 9}" x2="{cx + dx}" y2="{cy + 13}" />'
+                   for dx in (-5, 0, 5))
+    return (f'<g class="stroke" stroke-width="1.3">'
+            f'<rect x="{cx - 9}" y="{cy - 9}" width="18" height="18" rx="2.5" />{pins}</g>'
+            f'<circle cx="{cx}" cy="{cy}" r="2.4" fill="currentColor" />')
+
+
+def icon_scale(cx, cy):
+    """重み付き和 = 天秤。"""
+    return (f'<g class="stroke" stroke-width="1.3">'
+            f'<line x1="{cx}" y1="{cy - 10}" x2="{cx}" y2="{cy + 9}" />'
+            f'<line x1="{cx - 12}" y1="{cy - 6}" x2="{cx + 12}" y2="{cy - 6}" />'
+            f'<path d="M {cx - 17} {cy + 1} h 10 l -5 -7 z" />'
+            f'<path d="M {cx + 7} {cy + 1} h 10 l -5 -7 z" />'
+            f'<line x1="{cx - 6}" y1="{cy + 9}" x2="{cx + 6}" y2="{cy + 9}" /></g>')
+
+
+def icon_ranked(cx, cy):
+    """スコア順 = 降順の棒。"""
+    return (f'<g class="stroke" stroke-width="1.3">'
+            f'<line x1="{cx - 12}" y1="{cy + 10}" x2="{cx + 13}" y2="{cy + 10}" /></g>'
+            f'<rect x="{cx - 10}" y="{cy - 10}" width="6" height="19" fill="currentColor" />'
+            f'<rect x="{cx - 1}" y="{cy - 4}" width="6" height="13" fill="currentColor" opacity=".6" />'
+            f'<rect x="{cx + 8}" y="{cy + 1}" width="6" height="8" fill="currentColor" opacity=".35" />')
+
+
+def icon_cut(cx, cy):
+    """上位で切る = 破線の切断線と落ちる分。"""
+    return (f'<g class="stroke" stroke-width="1.3">'
+            f'<rect x="{cx - 12}" y="{cy - 12}" width="24" height="9" rx="1.5" />'
+            f'<line x1="{cx - 15}" y1="{cy} " x2="{cx + 15}" y2="{cy}" stroke-dasharray="3 3" />'
+            f'<rect x="{cx - 12}" y="{cy + 4}" width="24" height="8" rx="1.5" opacity=".3" /></g>')
+
+
+def icon_add_info(cx, cy):
+    """情報を足す = カードに + 。"""
+    return (f'<g class="stroke" stroke-width="1.3">'
+            f'<rect x="{cx - 13}" y="{cy - 9}" width="20" height="18" rx="2.5" /></g>'
+            f'<g class="stroke" stroke-width="1.7" style="color: var(--boost)">'
+            f'<line x1="{cx + 9}" y1="{cy - 5}" x2="{cx + 9}" y2="{cy + 3}" />'
+            f'<line x1="{cx + 5}" y1="{cy - 1}" x2="{cx + 13}" y2="{cy - 1}" /></g>')
+
+
+def icon_shield(cx, cy):
+    """可視性で落とす = 盾。"""
+    return (f'<g class="stroke" stroke-width="1.4">'
+            f'<path d="M {cx} {cy - 11} l 10 4 v 7 q 0 7 -10 11 q -10 -4 -10 -11 v -7 z" /></g>')
+
+
+def icon_list_out(cx, cy):
+    """出口 = 並んだ行。"""
+    rows = ''.join(f'<line x1="{cx - 10}" y1="{cy + dy}" x2="{cx + 12}" y2="{cy + dy}" />'
+                   for dy in (-8, -2, 4))
+    return (f'<g class="stroke" stroke-width="1.3">{rows}</g>'
+            + ''.join(f'<circle cx="{cx - 14}" cy="{cy + dy}" r="1.7" fill="currentColor" />'
+                      for dy in (-8, -2, 4)))
+
+
+# ── I/P/O の共通実装（5 段で座標を共有する）
+#    IN 20..250 / PR 310..590 / OU 650..880。文字は必ずこの内側に収める。
+def ipo_icons_svg(uid, inputs, process_title, processes, output, note, aria):
+    """inputs: [(icon_fn, 見出し, 補足)] 最大 3
+    processes: [(icon_fn, 見出し)] 最大 3
+    output: (icon_fn, 見出し, [補足行]) 補足は最大 2
     """
-    # class は 1 つだけ出す（2 つ書くと後ろが無視され、muted が効かない）
-    def label(x, y, fs, t, muted=False):
+    def label(x, y, fs, t, muted=False, anchor=None):
         cls = 's-label muted' if muted else 's-label'
-        return (f'<text class="{cls}" x="{x}" y="{y}" font-size="{fs}" '
+        a = f' text-anchor="{anchor}"' if anchor else ''
+        return (f'<text class="{cls}" x="{x}" y="{y}" font-size="{fs}"{a} '
                 f'fill="currentColor">{t}</text>')
+
+    in_ys = (84, 146, 208)[:len(inputs)]
+    pr_ys = (106, 154, 202)[:len(processes)]
+    in_parts = ''.join(
+        icon(56, y) + label(82, y - 4, 12.5, head) + label(82, y + 12, 10, sub, muted=True)
+        for (icon, head, sub), y in zip(inputs, in_ys))
+    pr_parts = ''.join(
+        icon(340, y) + label(366, y + 4, 11.5, head)
+        for (icon, head), y in zip(processes, pr_ys))
+    # note は 1 行なら下端寄り、2 行なら少し上から。いずれも箱（〜250）の内側に収める
+    note_lines = [note] if isinstance(note, str) else list(note)
+    note_ys = (236,) if len(note_lines) == 1 else (222, 238)
+    note_parts = ''.join(
+        f'<text class="s-label muted" x="450" y="{y}" font-size="10.5" text-anchor="middle" '
+        f'fill="currentColor">{t}</text>'
+        for t, y in zip(note_lines, note_ys))
+
+    out_icon, out_head, out_subs = output
+    out_parts = (out_icon(760, 108) + label(765, 176, 13, out_head, anchor='middle')
+                 + ''.join(label(765, 198 + i * 16, 10, s, muted=True, anchor='middle')
+                           for i, s in enumerate(out_subs[:2])))
+
     return (
-        f'<svg viewBox="0 0 900 300" role="img" aria-label="候補ソース段の入力・処理・出力。'
-        f'入力は利用者 ID と最近の反応とリクエストの種類、処理は {N_SRC} 本のソースが'
-        f'フォロー中・興味が近い・話題やキャッシュから取得、'
-        f'出力は重複を含み属性の付いていない候補投稿の集合">'
-        '<defs><marker id="ipo-src" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" '
+        f'<svg viewBox="0 0 900 300" role="img" aria-label="{aria}">'
+        f'<defs><marker id="ipo-{uid}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" '
         'markerHeight="7" orient="auto-start-reverse">'
         '<path d="M 0 1 L 9 5 L 0 9 z" fill="currentColor" /></marker></defs>'
-
         '<text class="s-mono" x="20" y="24" font-size="11" letter-spacing="2" '
         'style="fill: var(--ink-3)">INPUT</text>'
         '<text class="s-mono" x="450" y="24" font-size="11" letter-spacing="2" '
         'text-anchor="middle" style="fill: var(--accent)">PROCESS</text>'
         '<text class="s-mono" x="880" y="24" font-size="11" letter-spacing="2" '
         'text-anchor="end" style="fill: var(--ink-3)">OUTPUT</text>'
-
         '<rect x="20" y="38" width="230" height="212" rx="3" class="stroke faint" stroke-width="1.25" />'
         '<rect x="310" y="38" width="280" height="212" rx="3" class="stroke" stroke-width="1.5" '
         'style="color: var(--accent)" />'
         '<rect x="650" y="38" width="230" height="212" rx="3" class="stroke faint" stroke-width="1.25" />'
-
-        + icon_viewer(56, 84)
-        + label(82, 80, 12.5, '利用者 ID')
-        + label(82, 96, 10, '誰のタイムラインか', muted=True)
-
-        + icon_reaction(56, 146)
-        + label(82, 142, 12.5, '最近の反応')
-        + label(82, 158, 10, 'いいねした投稿など', muted=True)
-
-        + icon_request(56, 208)
-        + label(82, 204, 12.5, 'リクエストの種類')
-        + label(82, 220, 10, '通常・トピック指定', muted=True)
-
+        + in_parts
         + f'<text class="s-label" x="450" y="70" font-size="13" text-anchor="middle" '
-          f'style="fill: var(--accent)">{N_SRC} 本の網を同時に投げる</text>'
-
-        + icon_following(340, 106)
-        + label(366, 110, 11.5, 'フォロー中から取る')
-        + icon_similar(340, 154)
-        + label(366, 158, 11.5, '興味が近いところから取る')
-        + icon_topic(340, 202)
-        + label(366, 206, 11.5, '話題・キャッシュから取る')
-
-        + '<text class="s-label muted" x="450" y="236" font-size="10.5" text-anchor="middle" '
-          'fill="currentColor">それぞれ上限まで取ったら打ち切る</text>'
-
-        + icon_pile(752, 110)
-        + '<text class="s-label" x="765" y="176" font-size="13" text-anchor="middle" '
-          'fill="currentColor">候補投稿の集合</text>'
-        + '<text class="s-label muted" x="765" y="198" font-size="10" text-anchor="middle" '
-          'fill="currentColor">同じ投稿が重複して入る</text>'
-        + '<text class="s-label muted" x="765" y="214" font-size="10" text-anchor="middle" '
-          'fill="currentColor">属性はまだ付いていない</text>'
-
-        + '<g class="stroke" stroke-width="1.5" marker-end="url(#ipo-src)">'
+          f'style="fill: var(--accent)">{process_title}</text>'
+        + pr_parts
+        + note_parts
+        + out_parts
+        + f'<g class="stroke" stroke-width="1.5" marker-end="url(#ipo-{uid})">'
           '<line x1="250" y1="144" x2="304" y2="144" />'
           '<line x1="590" y1="144" x2="644" y2="144" /></g>'
+        '</svg>')
 
-        + f'<text class="s-label muted" x="20" y="278" font-size="11.5" fill="currentColor">'
-          f'既定で無効なソースが {N_SRC_OFF} 本ある。動く本数はリクエストの種類でも変わる。</text>'
-        + '</svg>')
+
+def ipo_sources_svg():
+    return ipo_icons_svg(
+        'src',
+        [(icon_viewer, '利用者 ID', '誰のタイムラインか'),
+         (icon_reaction, '最近の反応', 'いいねした投稿など'),
+         (icon_request, 'リクエストの種類', '通常・トピック指定')],
+        f'{N_SRC} 本の網を同時に投げる',
+        [(icon_following, 'フォロー中から取る'),
+         (icon_similar, '興味が近いところから取る'),
+         (icon_topic, '話題・キャッシュから取る')],
+        (icon_pile, '候補投稿の集合', ['同じ投稿が重複して入る', '属性はまだ付いていない']),
+        [f'既定で無効なソースが {N_SRC_OFF} 本ある',
+         '動く本数はリクエストの種類でも変わる'],
+        f'候補ソース段の入力・処理・出力。入力は利用者 ID と最近の反応とリクエストの種類、'
+        f'処理は {N_SRC} 本のソースがフォロー中・興味が近い・話題やキャッシュから取得、'
+        f'出力は重複を含み属性の付いていない候補投稿の集合')
+
+def ipo_hydrators_svg():
+    return ipo_icons_svg(
+        'hyd',
+        [(icon_card_blank, '候補投稿', '属性がまだ無い'),
+         (icon_dup, '重複あり', '同じ投稿が複数')],
+        f'{N_HYD} 個が属性を貼る',
+        [(icon_service, 'フォロー関係を判定する'),
+         (icon_service, '著者・メディア・言語'),
+         (icon_service, '実測のいいね数など')],
+        (icon_card_filled, '属性付き候補', ['落とす判断ができる', '件数は変わらない']),
+        '外部サービスへの問い合わせ。失敗しても止まらず進む',
+        f'ハイドレータ段の入出力。属性の無い候補に {N_HYD} 個のハイドレータが'
+        'フォロー関係・著者属性・実測値を貼り、判断できる状態にする')
+
+
+def ipo_filters_svg():
+    return ipo_icons_svg(
+        'fil',
+        [(icon_card_filled, '属性付き候補', 'フォロー関係など'),
+         (icon_dup, '件数は不明', 'コードに書かれていない')],
+        f'{N_FIL} 個を順に通す',
+        [(icon_sieve, '形式と経過時間で落とす'),
+         (icon_eye_off, '既読・ミュートで落とす'),
+         (icon_flask, '実験・整合で落とす')],
+        (icon_cards_fewer, '生き残った候補', ['ここから採点に進む', '残る件数は不明']),
+        '1 つでも当たればそこで終わり。点では取り返せない',
+        f'フィルタ段の入出力。属性付き候補が {N_FIL} 個の関門を順に通り、'
+        '形式や経過時間、閲覧者の既読やミュート、実験用の間引きで落ちる')
+
+
+def ipo_scoring_svg():
+    return ipo_icons_svg(
+        'sco',
+        [(icon_cards_fewer, '生き残った候補', '点はまだ無い')],
+        f'{N_SCO} 段で点を付ける',
+        [(icon_model, 'モデルが確率を予測'),
+         (icon_scale, '重みを掛けて足す'),
+         (icon_model, '2 段目が再採点する')],
+        (icon_ranked, 'スコア付き候補', ['並べ替えの基準ができた', '件数は変わらない']),
+        '重みが掛かるのは予測確率。実測の反応数ではない',
+        f'採点段の入出力。生き残った候補に対し {N_SCO} 段のスコアラーが'
+        'アクション別の確率を予測し、重みを掛けて足し、2 段目のモデルが再採点する')
+
+
+def ipo_selection_svg():
+    return ipo_icons_svg(
+        'sel',
+        [(icon_ranked, 'スコア付き候補', '順序を決める数値')],
+        '並べて切る',
+        [(icon_cut, 'スコア順に上位 50'),
+         (icon_add_info, f'重い情報を足す（{N_PS_HYD}）'),
+         (icon_shield, f'可視性で落とす（{N_PS_FIL}）')],
+        (icon_list_out, '外側へ渡す投稿', ['35 件以下', 'ここが内側の出口']),
+        '切ってから重い処理をする。だから絞り込みが 2 段ある',
+        '選択と出口の入出力。スコア順に上位 50 件へ切り、'
+        f'選択後の {N_PS_HYD} 個のハイドレータと {N_PS_FIL} 個のフィルタを通し、最後に 35 件へ切る')
 
 
 def comp_table(stage, kind, show_ctl=False, cols=('#', '名前', '役割')):
@@ -611,15 +761,7 @@ HYDRATORS = header(
     <div><p class="eyebrow">Input / Process / Output</p><h2>この段の入力と出力</h2></div>
     <figure>
       <div class="canvas">
-        {ipo_svg(2,
-                 ('候補投稿の集合', '投稿 ID 中心。判断材料はまだ無い'),
-                 f'{N_HYD} 個のハイドレータを順に適用する',
-                 ['フォロー関係を判定して書き込む',
-                  '著者の属性・メディア・言語を取得する',
-                  '実測のいいね数・返信数を取得する',
-                  '外部サービスへの問い合わせは並行して行う'],
-                 ('属性の付いた候補', '落とす／点を付ける判断ができる状態'),
-                 '問い合わせに失敗した属性は空のまま次段へ進む（処理は止まらない）。')}
+        {ipo_hydrators_svg()}
       </div>
       <figcaption>
         この段は候補を<b>1 件も減らさない</b>。増やしもしない。ただ情報を厚くするだけ。
@@ -741,15 +883,7 @@ FILTERS = header(
     <div><p class="eyebrow">Input / Process / Output</p><h2>この段の入力と出力</h2></div>
     <figure>
       <div class="canvas">
-        {ipo_svg(3,
-                 ('属性の付いた候補', 'フォロー関係・著者属性・メディア等'),
-                 f'{N_FIL} 個のフィルタを順に適用する',
-                 ['重複・データ欠落を落とす',
-                  '経過時間と投稿の形式で落とす',
-                  '閲覧者の既読・ミュート・ブロックで落とす',
-                  '効果測定用のホールドアウトで落とす'],
-                 ('生き残った候補', 'ここから採点に進む'),
-                 '各フィルタは条件付きで無効化されうるので、常に {N_FIL} 個すべてが評価されるとは限らない。')}
+        {ipo_filters_svg()}
       </div>
       <figcaption>
         この段は候補を<b>減らすだけ</b>で、順番も点数も付けない。
@@ -962,15 +1096,7 @@ SCORING = header(
     <div><p class="eyebrow">Input / Process / Output</p><h2>この段の入力と出力</h2></div>
     <figure>
       <div class="canvas">
-        {ipo_svg(4,
-                 ('生き残った候補', 'フィルタを通過したもの'),
-                 f'{N_SCO} 段のスコアラーを順に適用する',
-                 ['外部モデルがアクション別の確率を予測する',
-                  '予測値に重みを掛けて 1 本のスコアにする',
-                  '同じ著者の連続とフォロー外に減衰を掛ける',
-                  '2 段目の外部モデルが再採点する'],
-                 ('スコア付き候補', '並べ替えの基準ができた状態'),
-                 '2 段目の呼び出しに失敗した場合は、重み付き和の結果をそのまま使う。')}
+        {ipo_scoring_svg()}
       </div>
       <figcaption>
         この段も候補を減らさない。<b>順序を決めるための数値を足すだけ</b>。
@@ -1192,15 +1318,7 @@ SELECTION = header(
     <div><p class="eyebrow">Input / Process / Output</p><h2>この段の入力と出力</h2></div>
     <figure>
       <div class="canvas">
-        {ipo_svg(5,
-                 ('スコア付き候補', '順序を決める数値を持っている'),
-                 'セレクタと選択後の {N_PS_HYD + N_PS_FIL} 部品を適用する',
-                 ['スコア降順に並べて上位 50 件を選ぶ',
-                  f'選択後ハイドレータ {N_PS_HYD} 個が情報を足す',
-                  f'選択後フィルタ {N_PS_FIL} 個が可視性で落とす',
-                  '最終的に 35 件へ切る'],
-                 ('外側へ渡す投稿', '35 件以下。ここが内側の出口'),
-                 'スコアが無い候補は負の無限大として扱われ、最後尾に落ちる。')}
+        {ipo_selection_svg()}
       </div>
       <figcaption>
         ここが<b>内側のパイプラインの出口</b>。この先は外側が受け取り、
