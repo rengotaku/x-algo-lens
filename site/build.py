@@ -227,6 +227,146 @@ def ipo_svg(uid, inp, proc_title, proc_steps, out, note=''):
         </svg>"""
 
 
+
+# ── アイコン（インライン SVG の図形のみ。意味を持つものだけ描く）
+def _person(cx, cy, r=4.2):
+    return (f'<circle cx="{cx}" cy="{cy - 6}" r="{r}" />'
+            f'<path d="M {cx - 7.5} {cy + 8} a 7.5 7.5 0 0 1 15 0" />')
+
+
+def icon_viewer(cx, cy):
+    """利用者 = 人。"""
+    return f'<g class="stroke" stroke-width="1.4">{_person(cx, cy)}</g>'
+
+
+def icon_reaction(cx, cy):
+    """最近の反応 = 投稿カードにハート。"""
+    return (f'<g class="stroke" stroke-width="1.4">'
+            f'<rect x="{cx - 11}" y="{cy - 9}" width="22" height="18" rx="2.5" /></g>'
+            f'<path d="M {cx} {cy + 4} c -3.6,-3 -5.2,-4.8 -5.2,-7 '
+            f'a 2.6 2.6 0 0 1 5.2,-1.4 a 2.6 2.6 0 0 1 5.2,1.4 c 0,2.2 -1.6,4 -5.2,7 z" '
+            f'fill="currentColor" />')
+
+
+def icon_request(cx, cy):
+    """リクエストの種類 = 重なったタブ。"""
+    return (f'<g class="stroke" stroke-width="1.4">'
+            f'<rect x="{cx - 12}" y="{cy - 9}" width="17" height="12" rx="2" />'
+            f'<rect x="{cx - 5}" y="{cy - 2}" width="17" height="12" rx="2" /></g>')
+
+
+def icon_following(cx, cy):
+    """フォロー中 = 2 人が線で繋がっている。"""
+    return (f'<g class="stroke" stroke-width="1.4">'
+            f'<circle cx="{cx - 9}" cy="{cy - 4}" r="3.4" />'
+            f'<circle cx="{cx + 9}" cy="{cy - 4}" r="3.4" />'
+            f'<path d="M {cx - 14} {cy + 7} a 5 5 0 0 1 10 0" />'
+            f'<path d="M {cx + 4} {cy + 7} a 5 5 0 0 1 10 0" />'
+            f'<line x1="{cx - 5}" y1="{cy - 4}" x2="{cx + 5}" y2="{cy - 4}" /></g>')
+
+
+def icon_similar(cx, cy):
+    """興味が近い = 点の群れの中で 1 点が選ばれている。"""
+    dots = ''.join(
+        f'<circle cx="{cx + dx}" cy="{cy + dy}" r="1.9" fill="currentColor" opacity=".45" />'
+        for dx, dy in ((-10, -6), (-3, -10), (7, -7), (-8, 4), (4, 6), (11, 2)))
+    return (f'<g class="stroke faint" stroke-width="1" stroke-dasharray="2 2">'
+            f'<circle cx="{cx}" cy="{cy - 1}" r="13" /></g>{dots}'
+            f'<circle cx="{cx}" cy="{cy - 1}" r="3.4" fill="currentColor" />')
+
+
+def icon_topic(cx, cy):
+    """話題・キャッシュ = タグ。"""
+    return (f'<g class="stroke" stroke-width="1.4">'
+            f'<path d="M {cx - 11} {cy - 9} h 11 l 10 9 l -10 9 h -11 z" /></g>'
+            f'<circle cx="{cx - 5}" cy="{cy}" r="1.9" fill="currentColor" />')
+
+
+def icon_pile(cx, cy):
+    """候補の集合 = 重なった投稿カード。右にずれた破線が重複を表す。"""
+    def card(x, y, o):
+        return (f'<rect x="{x}" y="{y}" width="40" height="27" rx="3" class="stroke" '
+                f'stroke-width="1.3" opacity="{o}" />')
+    return (card(cx - 26, cy - 20, '.35')
+            + card(cx - 20, cy - 14, '.6')
+            + card(cx - 14, cy - 8, '1')
+            + f'<g class="stroke faint" stroke-width="1">'
+              f'<line x1="{cx - 8}" y1="{cy}" x2="{cx + 14}" y2="{cy}" />'
+              f'<line x1="{cx - 8}" y1="{cy + 6}" x2="{cx + 4}" y2="{cy + 6}" /></g>'
+            + f'<rect x="{cx + 2}" y="{cy - 20}" width="40" height="27" rx="3" fill="none" '
+              f'stroke="currentColor" stroke-width="1.2" stroke-dasharray="4 3" opacity=".5" />')
+
+
+def ipo_sources_svg():
+    """候補ソース段の Input / Process / Output。アイコンと語で内容を示す。
+
+    文字は必ず所属する箱（IN 20-250 / PR 310-590 / OU 650-880）の内側に収める。
+    """
+    label = ('<text class="s-label" x="{x}" y="{y}" font-size="{fs}"{extra}'
+             ' fill="currentColor">{t}</text>')
+    return (
+        f'<svg viewBox="0 0 900 300" role="img" aria-label="候補ソース段の入力・処理・出力。'
+        f'入力は利用者 ID と最近の反応とリクエストの種類、処理は {N_SRC} 本のソースが'
+        f'フォロー中・興味が近い・話題やキャッシュから取得、'
+        f'出力は重複を含み属性の付いていない候補投稿の集合">'
+        '<defs><marker id="ipo-src" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" '
+        'markerHeight="7" orient="auto-start-reverse">'
+        '<path d="M 0 1 L 9 5 L 0 9 z" fill="currentColor" /></marker></defs>'
+
+        '<text class="s-mono" x="20" y="24" font-size="11" letter-spacing="2" '
+        'style="fill: var(--ink-3)">INPUT</text>'
+        '<text class="s-mono" x="450" y="24" font-size="11" letter-spacing="2" '
+        'text-anchor="middle" style="fill: var(--accent)">PROCESS</text>'
+        '<text class="s-mono" x="880" y="24" font-size="11" letter-spacing="2" '
+        'text-anchor="end" style="fill: var(--ink-3)">OUTPUT</text>'
+
+        '<rect x="20" y="38" width="230" height="212" rx="3" class="stroke faint" stroke-width="1.25" />'
+        '<rect x="310" y="38" width="280" height="212" rx="3" class="stroke" stroke-width="1.5" '
+        'style="color: var(--accent)" />'
+        '<rect x="650" y="38" width="230" height="212" rx="3" class="stroke faint" stroke-width="1.25" />'
+
+        + icon_viewer(56, 84)
+        + label.format(x=82, y=80, fs=12.5, extra='', t='利用者 ID')
+        + label.format(x=82, y=96, fs=10, extra=' class="s-label muted"', t='誰のタイムラインか')
+
+        + icon_reaction(56, 146)
+        + label.format(x=82, y=142, fs=12.5, extra='', t='最近の反応')
+        + label.format(x=82, y=158, fs=10, extra=' class="s-label muted"', t='いいねした投稿など')
+
+        + icon_request(56, 208)
+        + label.format(x=82, y=204, fs=12.5, extra='', t='リクエストの種類')
+        + label.format(x=82, y=220, fs=10, extra=' class="s-label muted"', t='通常・トピック指定')
+
+        + f'<text class="s-label" x="450" y="70" font-size="13" text-anchor="middle" '
+          f'style="fill: var(--accent)">{N_SRC} 本の網を同時に投げる</text>'
+
+        + icon_following(340, 106)
+        + label.format(x=366, y=110, fs=11.5, extra='', t='フォロー中から取る')
+        + icon_similar(340, 154)
+        + label.format(x=366, y=158, fs=11.5, extra='', t='興味が近いところから取る')
+        + icon_topic(340, 202)
+        + label.format(x=366, y=206, fs=11.5, extra='', t='話題・キャッシュから取る')
+
+        + '<text class="s-label muted" x="450" y="236" font-size="10.5" text-anchor="middle" '
+          'fill="currentColor">それぞれ上限まで取ったら打ち切る</text>'
+
+        + icon_pile(752, 110)
+        + '<text class="s-label" x="765" y="176" font-size="13" text-anchor="middle" '
+          'fill="currentColor">候補投稿の集合</text>'
+        + '<text class="s-label muted" x="765" y="198" font-size="10" text-anchor="middle" '
+          'fill="currentColor">同じ投稿が重複して入る</text>'
+        + '<text class="s-label muted" x="765" y="214" font-size="10" text-anchor="middle" '
+          'fill="currentColor">属性はまだ付いていない</text>'
+
+        + '<g class="stroke" stroke-width="1.5" marker-end="url(#ipo-src)">'
+          '<line x1="250" y1="144" x2="304" y2="144" />'
+          '<line x1="590" y1="144" x2="644" y2="144" /></g>'
+
+        + f'<text class="s-label muted" x="20" y="278" font-size="11.5" fill="currentColor">'
+          f'既定で無効なソースが {N_SRC_OFF} 本ある。動く本数はリクエストの種類でも変わる。</text>'
+        + '</svg>')
+
+
 def comp_table(stage, kind, show_ctl=False, cols=('#', '名前', '役割')):
     items = sorted([c for c in COMPONENTS if c['stage'] == stage and c['kind'] == kind],
                    key=lambda c: c['order'])
@@ -387,15 +527,7 @@ SOURCES = header(
     <div><p class="eyebrow">Input / Process / Output</p><h2>この段の入力と出力</h2></div>
     <figure>
       <div class="canvas">
-        {ipo_svg(1,
-                 ('利用者の手がかり', '利用者 ID・最近反応した投稿・リクエストの種類'),
-                 f'{N_SRC} 本の候補ソースを実行する',
-                 ['フォロー中の投稿を取る（Thunder）',
-                  '興味の近い投稿を取る（SimClusters・Phoenix）',
-                  '話題・キャッシュから取る',
-                  '各ソースが上限件数まで取得する'],
-                 ('候補投稿の集合', '重複あり・属性はまだ無い'),
-                 f'既定で無効なソースが {N_SRC_OFF} 本ある。動く本数はリクエストの種類でも変わる。')}
+        {ipo_sources_svg()}
       </div>
       <figcaption>
         入口には「その投稿がよいか」の判断は無い。<b>誰の何に近いか、いつのものか</b>で拾われる。
