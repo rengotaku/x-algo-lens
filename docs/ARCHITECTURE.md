@@ -34,9 +34,21 @@ analysis/*.yaml  →  site/build.py  →  site/dist/*.html          （公開用
 `factors.yaml` の `summary` に散文で書かれており構造化フィールドではないため、
 ページ側も散文として持つ。**構造化されているものは必ず導出する**、が線引き。
 
-`site/dist/` は生成物なのでコミットしない。
+`site/dist/` は生成物なのでコミットしない（`make site` のたびに再生成される使い捨てディレクトリ）。
 
 `links.json` に無いキーが参照されたら生成を**中断する**（リンク切れのページを黙って出さないため）。
+
+### 恒久保存したいページは site/published/
+
+公開先（claude.ai の Artifact）へのリンクを `links.json` に登録するだけでは、
+**そのページの実体はリポジトリの外**（claude.ai）にしか存在しない状態になる。
+外部サービスが変わる／消える可能性に備え、実体そのものをリポジトリに残したいページは、
+`site/dist/preview/*.html`（charset 付きの完全な文書。`dist/*.html` の骨組み無しフラグメントとは違い単独で開ける）を
+`site/published/` へ手動でコピーし、git 管理下に置く。
+
+- `site/published/` は `dist/` と違い **gitignore 対象外**（`make site` は書き込まない。上書きされない）
+- 台帳を更新して該当ページの内容が変わったら、`site/published/` 側も手動で再コピーする（自動同期はしない）
+- 全ページを機械的に置く運用ではなく、**恒久保存が要ると判断したページだけ**を都度コピーする
 
 3 本の台帳はスキーマが違う（`factors.yaml` は `stage`/`author_controllable`/`direction`、
 `code.yaml` は `topic`/`takeaway`、`components.yaml` は `kind`/`order`/`controlled_by`）が、
