@@ -7,16 +7,21 @@ source.lock            解析対象の commit（機械可読な唯一の正）
   │
   ├─ scripts/fetch-source.zsh   → vendor/x-algorithm を pinned SHA で取得（git 管理外）
   │
-analysis/factors.yaml  根拠台帳①: 投稿者が操作可能なランキング要因
-analysis/code.yaml     根拠台帳②: コードそのもの（設計・実装技法）
+analysis/factors.yaml     根拠台帳①: 投稿者が操作可能なランキング要因
+analysis/code.yaml        根拠台帳②: コードそのもの（設計・実装技法）
+analysis/components.yaml  根拠台帳③: パイプライン構成要素のカタログ
   │
-  └─ scripts/verify-evidence.py → 両台帳の path:line:snippet を vendor の実ファイルと照合
+  └─ scripts/verify-evidence.py → 全台帳の path:line:snippet を vendor の実ファイルと照合
                                   1 件でも不一致なら exit 1
 ```
 
-2 本の台帳はスキーマが違う（`factors.yaml` は `stage`/`author_controllable`/`direction`、
-`code.yaml` は `topic`/`takeaway`）が、**evidence の照合は同じ関数 1 つ**（`check_evidence`）を通る。
+3 本の台帳はスキーマが違う（`factors.yaml` は `stage`/`author_controllable`/`direction`、
+`code.yaml` は `topic`/`takeaway`、`components.yaml` は `kind`/`order`/`controlled_by`）が、
+**evidence の照合は同じ関数 1 つ**（`check_evidence`）を通る。
 台帳を足すときは `LEDGERS` に `LedgerSpec` を 1 つ加えるだけで、検証の厳しさは自動的に揃う。
+
+3 本目を足したときの実測差分は `LEDGERS` への 1 エントリと enum 定義で **+25 行**、
+`check_evidence` は無変更（ADR 0002 の設計どおり）。
 
 `make ci` = `fetch` → `verify`。CI ゲートはこの 1 本。
 

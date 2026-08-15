@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """根拠台帳を、ピン留めした解析対象の実ファイルと突き合わせて検証する。
 
-台帳は 2 本ある。
-  analysis/factors.yaml — 投稿者が操作可能なランキング要因
-  analysis/code.yaml    — コードそのもの（設計・実装技法）の観察
+台帳は 3 本ある。
+  analysis/factors.yaml    — 投稿者が操作可能なランキング要因
+  analysis/code.yaml       — コードそのもの（設計・実装技法）の観察
+  analysis/components.yaml — パイプライン構成要素のカタログ
 
 この repo の主張はすべて「該当ファイルの該当行にこの文字列が実在する」まで固定されている。
-evidence の照合ロジックは 1 箇所だけに置き、両台帳に同じ厳しさで適用する。
+evidence の照合ロジックは 1 箇所だけに置き、全台帳に同じ厳しさで適用する。
 1 件でも不一致・欠落があれば exit 1（fail-closed）。
 """
 
@@ -33,6 +34,11 @@ STAGES = {"source", "hydrator", "filter", "scorer", "selector", "visibility", "i
 # YAML 1.1 が yes/no を真偽値に解釈するため、その 2 語は意図的に避けている
 CONTROLLABLE = {"direct", "indirect", "none"}
 DIRECTIONS = {"boost", "suppress", "gate", "neutral"}
+KINDS = {"source", "hydrator", "filter", "scorer", "selector"}
+# 選択（selector）の前か後か。post_selection の filter は main の filter とは別の列
+STAGES_PIPELINE = {"main", "post_selection"}
+# 誰の都合でその処理が効くか。author=投稿の作り方 / viewer=閲覧者の設定・履歴 / system=運用・実験・整合
+CONTROLLED_BY = {"author", "viewer", "system"}
 TOPICS = {
     "architecture",
     "abstraction",
@@ -58,6 +64,9 @@ class LedgerSpec:
     required: tuple[str, ...]
     enums: dict[str, set[str]]
     stat_keys: tuple[str, ...]
+    # 設定すると、これらのキーの組で entries をグループ分けし、各グループの `order` が
+    # 1 始まりの連番（重複なし）であることを検証する。配線順を持つ台帳で使う。
+    order_group: tuple[str, ...] = ()
 
     @property
     def path(self) -> Path:
@@ -108,6 +117,31 @@ LEDGERS = (
         ),
         enums={"topic": TOPICS, "confidence": CONFIDENCE},
         stat_keys=("topic", "confidence"),
+    ),
+    LedgerSpec(
+        filename="components.yaml",
+        entries_key="components",
+        id_prefix="P",
+        label="構成要素",
+        required=(
+            "id",
+            "stage",
+            "kind",
+            "name",
+            "order",
+            "role",
+            "controlled_by",
+            "evidence",
+            "confidence",
+        ),
+        enums={
+            "stage": STAGES_PIPELINE,
+            "kind": KINDS,
+            "controlled_by": CONTROLLED_BY,
+            "confidence": CONFIDENCE,
+        },
+        stat_keys=("stage", "kind", "controlled_by", "confidence"),
+        order_group=("stage", "kind"),
     ),
 )
 
@@ -250,6 +284,39 @@ def check_entry(spec: LedgerSpec, entry, seen_ids: set[str], cache, fail: Failur
         check_evidence(f"{where} evidence[{i}]", ev, cache, fail)
 
 
+def check_order(spec: LedgerSpec, entries: list, fail: Failures) -> None:
+    """配線順を持つ台帳で、各グループの order が 1 始まりの連番であることを検証する。
+
+    order は「何がどの順で並ぶか」というこの台帳の中心的な主張なので、
+    型・重複・欠番を機械で見る。ここを見ないと、順序が壊れたまま CI が通る。
+    """
+    if not spec.order_group:
+        return
+
+    groups: dict[object, list[int]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        eid = entry.get("id", "<no id>")
+        order = entry.get("order")
+        if isinstance(order, bool) or not isinstance(order, int) or order < 1:
+            fail.add(f"{spec.filename} {eid}", f"order は 1 以上の整数にする: {order!r}")
+            continue
+        key = tuple(entry.get(k) for k in spec.order_group)
+        groups.setdefault(key, []).append(order)
+
+    for group, orders in groups.items():
+        label = " ".join(f"{k}={v}" for k, v in zip(spec.order_group, group))
+        where = f"{spec.filename} {label}"
+        expected = list(range(1, len(orders) + 1))
+        if sorted(orders) != expected:
+            dupes = sorted({o for o in orders if orders.count(o) > 1})
+            if dupes:
+                fail.add(where, f"order が重複している: {dupes}")
+            else:
+                fail.add(where, f"order が 1..{len(orders)} の連番でない: {sorted(orders)}")
+
+
 def load_ledger(spec: LedgerSpec, commit: str | None, fail: Failures) -> LedgerResult:
     result = LedgerResult(spec=spec)
     if not spec.path.is_file():
@@ -299,6 +366,10 @@ def main() -> int:
     vendor_ok = check_vendor(commit, fail) if commit else False
 
     results = [load_ledger(spec, commit, fail) for spec in LEDGERS]
+
+    # 配線順の検証は vendor に依存しないので、常に走らせる
+    for res in results:
+        check_order(res.spec, res.entries, fail)
 
     if vendor_ok:
         cache: dict[Path, list[str]] = {}

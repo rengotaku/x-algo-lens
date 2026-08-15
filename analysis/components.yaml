@@ -1,0 +1,860 @@
+# 根拠台帳③ — 内側パイプライン（Phoenix 候補パイプライン）の構成要素カタログ
+#
+# 「何がどの順で並んでいるか」の目録。レバーとしての意味は factors.yaml を参照する。
+# 書き方・スキーマは analysis/README.md を参照。
+# path / line / snippet は source_ref の commit に対してのみ有効（make verify が照合する）。
+
+source_ref: a389166f6cf5da70a286b568c87695d4dcdce3a1
+
+components:
+  # ── 候補ソース（phoenix_candidate_pipeline.rs:315-323 の配線順）
+  - id: P001
+    stage: main
+    kind: source
+    name: ThunderSource
+    order: 1
+    role: >-
+      フォロー中のユーザーの投稿を Thunder サービスから取得する。
+      取得件数の上限は既定 1200 件。
+    controlled_by: system
+    author_note: フォロワーがいれば自動的に対象になる。投稿者側の操作項目はコード上に無い。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 316
+        snippet: 'thunder_source,'
+      - path: home-mixer/sources/thunder_source.rs
+        line: 37
+        snippet: 'max_results: quality_factor::apply(query.params.get(ThunderMaxResults)),'
+      - path: home-mixer/params/param.rs
+        line: 18
+        line_end: 22
+        snippet: 'ThunderMaxResults,'
+      - path: home-mixer/params/param.rs
+        line: 18
+        line_end: 22
+        snippet: '1200'
+    confidence: high
+
+  - id: P002
+    stage: main
+    kind: source
+    name: TweetMixerSource
+    order: 2
+    role: >-
+      TweetMixer サービスからフォロー外を含む推薦候補を取得する。48 時間以内の投稿に限る。
+      上限は既定 800 件だが、**このソースは既定で無効**（EnableTweetMixerSource = false）。
+    controlled_by: system
+    author_note: 48 時間以内であることが前提条件。TweetMixer 側の推薦ロジックは非公開。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 317
+        snippet: 'tweet_mixer_source,'
+      - path: home-mixer/sources/tweet_mixer_source.rs
+        line: 17
+        snippet: 'const MAX_POST_AGE: Duration = Duration::from_secs(48 * 60 * 60);'
+      - path: home-mixer/params/param.rs
+        line: 42
+        line_end: 46
+        snippet: 'EnableTweetMixerSource,'
+      - path: home-mixer/params/param.rs
+        line: 42
+        line_end: 46
+        snippet: 'false'
+    confidence: high
+
+  - id: P003
+    stage: main
+    kind: source
+    name: SimclustersSource
+    order: 3
+    role: >-
+      利用者が最近反応した投稿と SimClusters 埋め込み空間で近い投稿を ANN 検索で集める。
+      スコア閾値 0.5 超・48 時間以内に限り、インターリーブ後 800 件に切る。既定で有効。
+    controlled_by: system
+    author_note: >-
+      投稿が「利用者の関心クラスタ」に近いと拾われる。
+      どのクラスタに属するかは投稿者が直接指定できない。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 318
+        snippet: 'simclusters_source,'
+      - path: home-mixer/sources/simclusters_source.rs
+        line: 114
+        snippet: '.filter(|c| *c.score > POST_ANN_MIN_SCORE)'
+      - path: home-mixer/sources/simclusters_source.rs
+        line: 121
+        snippet: 'interleaved.truncate(MAX_RESULTS);'
+      - path: home-mixer/params/param.rs
+        line: 49
+        line_end: 53
+        snippet: 'EnableSimclustersSource,'
+    confidence: high
+
+  - id: P004
+    stage: main
+    kind: source
+    name: PhoenixSource
+    order: 4
+    role: >-
+      Phoenix retrieval（埋め込みベースの検索モデル）から候補を取得する。上限は既定 1000 件。
+      既定で有効。上限だけで見れば ThunderSource（1200）に次ぐ 2 番目。
+    controlled_by: system
+    author_note: モデルが何を根拠に選ぶかは本リポジトリに含まれず、コードからは読み取れない。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 319
+        snippet: 'phoenix_source,'
+      - path: home-mixer/sources/phoenix_source.rs
+        line: 89
+        snippet: 'quality_factor::apply(query.params.get(PhoenixMaxResults)),'
+      - path: home-mixer/params/param.rs
+        line: 5
+        line_end: 9
+        snippet: 'PhoenixMaxResults,'
+      - path: home-mixer/params/param.rs
+        line: 5
+        line_end: 9
+        snippet: '1000'
+      - path: home-mixer/params/param.rs
+        line: 11
+        line_end: 14
+        snippet: 'EnablePhoenixSource,'
+    confidence: high
+
+  - id: P005
+    stage: main
+    kind: source
+    name: PhoenixTopicsSource
+    order: 5
+    role: >-
+      トピック指定のリクエストのときだけ動き、指定トピックに紐づく投稿を Phoenix から取得する。
+      件数上限は PhoenixSource と同じパラメータを共用する。
+    controlled_by: system
+    author_note: 投稿がどのトピックに紐づくかの判定ロジックは、このリポジトリからは読み取れない。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 320
+        snippet: 'phoenix_topics_source,'
+      - path: home-mixer/sources/phoenix_topics_source.rs
+        line: 52
+        snippet: 'let max_results = quality_factor::apply(query.params.get(PhoenixMaxResults));'
+    confidence: medium
+
+  - id: P006
+    stage: main
+    kind: source
+    name: PhoenixMOESource
+    order: 6
+    role: >-
+      Phoenix retrieval の Mixture of Experts 版から候補を取得する。上限は既定 200 件。
+      **このソースは既定で無効**（EnablePhoenixMOESource = false）。
+    controlled_by: system
+    author_note: 投稿者側からは操作できない。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 321
+        snippet: 'phoenix_moe_source,'
+      - path: home-mixer/params/param.rs
+        line: 159
+        line_end: 163
+        snippet: 'PhoenixMOEMaxResults,'
+      - path: home-mixer/params/param.rs
+        line: 159
+        line_end: 163
+        snippet: '200'
+      - path: home-mixer/params/param.rs
+        line: 135
+        line_end: 139
+        snippet: 'EnablePhoenixMOESource,'
+    confidence: high
+
+  - id: P007
+    stage: main
+    kind: source
+    name: CachedPostsSource
+    order: 7
+    role: >-
+      新規取得をせず、直前のリクエストでキャッシュ済みの投稿をそのまま返す。
+      キャッシュが 500 件以上あるときだけ有効になる。
+    controlled_by: system
+    author_note: 投稿者側からは操作できない。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 322
+        snippet: 'cached_posts_source,'
+      - path: home-mixer/sources/cached_posts_source.rs
+        line: 10
+        line_end: 12
+        snippet: 'fn enable(&self, query: &ScoredPostsQuery) -> bool {'
+      - path: home-mixer/query_hydrators/cached_posts_query_hydrator.rs
+        line: 11
+        snippet: 'const MIN_CACHED_POSTS_THRESHOLD: usize = 500;'
+    confidence: high
+
+  # ── 採点（phoenix_candidate_pipeline.rs:396 の配線順）
+  - id: P008
+    stage: main
+    kind: scorer
+    name: PhoenixScorer
+    order: 1
+    role: >-
+      外部の Phoenix 予測サービスに候補をまとめて投げ、
+      「いいね・返信・リポスト・クリック等が起きる確率」をアクション別に予測させて
+      候補に書き込む。ここではまだ 1 本のスコアにはならない。
+    controlled_by: system
+    author_note: 予測の根拠になるモデルは非公開。投稿者側から直接操作できる項目は無い。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 396
+        snippet: 'vec![phoenix_scorer, ranking_scorer, vm_ranker];'
+      - path: home-mixer/scorers/phoenix_scorer.rs
+        line: 109
+        snippet: 'phoenix_scores: predictions.candidate_scores(&c.get_original_tweet_id()),'
+    confidence: high
+
+  - id: P009
+    stage: main
+    kind: scorer
+    name: RankingScorer
+    order: 2
+    role: >-
+      PhoenixScorer が書き込んだ**予測値**に、アクション種別ごとの重みを掛けて合算する。
+      同じ著者の投稿が並ぶと減衰させ、フォロー外の候補には追加の割引を掛ける。
+    controlled_by: system
+    author_note: >-
+      重みが掛かる相手は「実際に付いた反応の数」ではなく「そのアクションが起きる予測確率」。
+      重みの大小は設計意図として読めるが、投稿者が直接動かせる値ではない。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 396
+        snippet: 'vec![phoenix_scorer, ranking_scorer, vm_ranker];'
+      - path: home-mixer/scorers/ranking_scorer.rs
+        line: 436
+        snippet: 'let scores: &PhoenixScores = &candidate.phoenix_scores;'
+      - path: home-mixer/scorers/ranking_scorer.rs
+        line: 704
+        snippet: 'impl Scorer<ScoredPostsQuery, PostCandidate> for RankingScorer {'
+    confidence: high
+
+  - id: P010
+    stage: main
+    kind: scorer
+    name: VMRanker
+    order: 3
+    role: >-
+      重み付き和の結果をさらに外部の VM Ranker サービスへ送り、2 段目のモデルで再採点する。
+      呼び出しに失敗した場合は RankingScorer が出したスコアをそのまま使う。
+    controlled_by: system
+    author_note: 投稿者側からは操作できない。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 396
+        snippet: 'vec![phoenix_scorer, ranking_scorer, vm_ranker];'
+      - path: home-mixer/scorers/vm_ranker.rs
+        line: 60
+        snippet: 'match self.client.rank(cluster, request).await {'
+      - path: home-mixer/scorers/vm_ranker.rs
+        line: 92
+        line_end: 94
+        snippet: 'RankingScorer::offset_score('
+    confidence: high
+
+  # ── 選択
+  - id: P011
+    stage: main
+    kind: selector
+    name: TopKScoreSelector
+    order: 1
+    role: >-
+      最終スコアの降順に並べ、上位 50 件だけを選択済みとして残す。
+      スコアが無い候補は負の無限大として扱われ最後尾に落ちる。
+    controlled_by: system
+    author_note: 投稿者側からは操作できない。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 398
+        snippet: 'let selector = TopKScoreSelector;'
+      - path: home-mixer/selectors/top_k_score_selector.rs
+        line: 13
+        snippet: 'Some(params::TOP_K_CANDIDATES_TO_SELECT)'
+    confidence: high
+
+  # ── フィルタ（phoenix_candidate_pipeline.rs:344-362 の配線順）
+  - id: P012
+    stage: main
+    kind: filter
+    name: DropDuplicatesFilter
+    order: 1
+    role: 同じ tweet_id が複数ソースから来たとき、2 件目以降を落とす。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/filters/drop_duplicates_filter.rs
+        line: 20
+        snippet: 'if seen_ids.insert(candidate.tweet_id) {'
+    confidence: high
+
+  - id: P013
+    stage: main
+    kind: filter
+    name: CoreDataHydrationFilter
+    order: 2
+    role: 著者 ID が 0（メタデータの取得に失敗した候補）を落とす。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/filters/core_data_hydration_filter.rs
+        line: 13
+        snippet: 'let (kept, removed) = candidates.into_iter().partition(|c| c.author_id != 0);'
+    confidence: high
+
+  - id: P014
+    stage: main
+    kind: filter
+    name: AgeFilter
+    order: 3
+    role: 投稿からの経過時間が上限（既定 48 時間）を超えた候補を落とす。時刻を復元できない候補も落とす。
+    controlled_by: author
+    author_note: 投稿してからの経過時間で決まる。F006 参照。
+    evidence:
+      - path: home-mixer/filters/age_filter.rs
+        line: 18
+        snippet: '.map(|age| age <= self.max_age)'
+    confidence: high
+
+  - id: P015
+    stage: main
+    kind: filter
+    name: SelfTweetFilter
+    order: 4
+    role: 閲覧者自身の投稿を落とす。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/filters/self_tweet_filter.rs
+        line: 16
+        snippet: '.partition(|c| c.author_id != viewer_id);'
+    confidence: high
+
+  - id: P016
+    stage: main
+    kind: filter
+    name: OONRetweetReplyFilter
+    order: 5
+    role: >-
+      フォロー外の候補のうちリポストとリプライを落とす。加えて、祖先を辿れないリプライも落とす。
+      条件は「閲覧者のフォロー関係」と「投稿の形式」の積で、後者は投稿者が選べる。
+    controlled_by: author
+    author_note: フォロー外へ届けたいなら単独ポストである必要がある。F005 参照。
+    evidence:
+      - path: home-mixer/filters/oon_retweet_reply_filter.rs
+        line: 16
+        snippet: '(c.in_network == Some(false) && (is_retweet || is_reply))'
+      - path: home-mixer/filters/oon_retweet_reply_filter.rs
+        line: 17
+        snippet: '|| (is_reply && c.ancestors.is_empty())'
+    confidence: high
+
+  - id: P017
+    stage: main
+    kind: filter
+    name: OONNsfwSimclustersFilter
+    order: 6
+    role: SimClusters 経由で来たフォロー外の候補のうち、著者が NSFW 判定のものを落とす。
+    controlled_by: author
+    author_note: 著者アカウントの属性で決まるため、投稿単位ではなくアカウント単位で効く。
+    evidence:
+      - path: home-mixer/filters/oon_nsfw_simclusters_filter.rs
+        line: 22
+        snippet: '&& c.nsfw_author == Some(true)'
+    confidence: high
+
+  - id: P018
+    stage: main
+    kind: filter
+    name: RetweetDeduplicationFilter
+    order: 7
+    role: 同じ元投稿に対するリポストが複数あるとき、最初の 1 件だけ残す。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/filters/retweet_deduplication_filter.rs
+        line: 20
+        line_end: 21
+        snippet: 'let dedup_id = candidate.retweeted_tweet_id.unwrap_or(candidate.tweet_id);'
+      - path: home-mixer/filters/retweet_deduplication_filter.rs
+        line: 20
+        line_end: 21
+        snippet: 'if seen_tweet_ids.insert(dedup_id) {'
+    confidence: high
+
+  - id: P019
+    stage: main
+    kind: filter
+    name: IneligibleSubscriptionFilter
+    order: 8
+    role: 購読者限定の投稿を、その著者を購読していない閲覧者に対して落とす。
+    controlled_by: viewer
+    evidence:
+      - path: home-mixer/filters/ineligible_subscription_filter.rs
+        line: 25
+        snippet: 'Some(author_id) => subscribed_user_ids.contains(&author_id),'
+    confidence: high
+
+  - id: P020
+    stage: main
+    kind: filter
+    name: PreviouslySeenPostsFilter
+    order: 9
+    role: 閲覧者が既に見た投稿を落とす。既読判定にはブルームフィルタも併用する。
+    controlled_by: viewer
+    evidence:
+      - path: home-mixer/filters/previously_seen_posts_filter.rs
+        line: 26
+        snippet: 'seen_ids.contains(&post_id)'
+    confidence: high
+
+  - id: P021
+    stage: main
+    kind: filter
+    name: PreviouslySeenPostsBackupFilter
+    order: 10
+    role: 既読判定の予備。インプレッション済み ID の集合と突き合わせて落とす。
+    controlled_by: viewer
+    evidence:
+      - path: home-mixer/filters/previously_seen_posts_backup_filter.rs
+        line: 26
+        snippet: '.partition(|c| related_post_ids_iter(c).any(|id| impressed_ids.contains(&id)));'
+    confidence: high
+
+  - id: P022
+    stage: main
+    kind: filter
+    name: PreviouslyServedPostsFilter
+    order: 11
+    role: 過去に配信済みの投稿を落とす。特定の条件下でのみ動く。
+    controlled_by: viewer
+    evidence:
+      - path: home-mixer/filters/previously_served_posts_filter.rs
+        line: 30
+        snippet: '.partition(|c| related_post_ids_iter(c).any(|id| served_ids.contains(&id)));'
+    confidence: high
+
+  - id: P023
+    stage: main
+    kind: filter
+    name: MutedKeywordFilter
+    order: 12
+    role: 投稿本文をトークン化し、閲覧者のミュートキーワードに一致するものを落とす。
+    controlled_by: viewer
+    author_note: 閲覧者ごとに設定が違うため、投稿者からは予測できない。
+    evidence:
+      - path: home-mixer/filters/muted_keyword_filter.rs
+        line: 47
+        snippet: 'if matcher.matches(&tweet_text_token_sequence) {'
+    confidence: high
+
+  - id: P024
+    stage: main
+    kind: filter
+    name: AuthorSocialgraphFilter
+    order: 13
+    role: >-
+      著者が閲覧者にミュート/ブロックされている場合に落とす。
+      著者側が閲覧者をブロックしている場合も落ちる。
+    controlled_by: viewer
+    evidence:
+      - path: home-mixer/filters/author_socialgraph_filter.rs
+        line: 29
+        snippet: 'let muted = viewer_muted_user_ids.contains(&author_id);'
+      - path: home-mixer/filters/author_socialgraph_filter.rs
+        line: 31
+        snippet: 'let author_blocks_viewer = candidate.author_blocks_viewer.unwrap_or(false);'
+    confidence: high
+
+  - id: P025
+    stage: main
+    kind: filter
+    name: VideoFilter
+    order: 14
+    role: 閲覧者が動画を除外するリクエストをしたときだけ動き、動画付きの候補を落とす。
+    controlled_by: viewer
+    evidence:
+      - path: home-mixer/filters/video_filter.rs
+        line: 19
+        snippet: '.partition(|c| c.min_video_duration_ms.is_none());'
+    confidence: high
+
+  - id: P026
+    stage: main
+    kind: filter
+    name: TopicIdsFilter
+    order: 15
+    role: トピック指定の閲覧時に対象外のトピックを落とし、閲覧者が除外設定したトピックも落とす。
+    controlled_by: viewer
+    evidence:
+      - path: home-mixer/filters/topic_ids_filter.rs
+        line: 97
+        snippet: '.any(|tid| excluded_expanded.contains(tid)),'
+    confidence: high
+
+  - id: P027
+    stage: main
+    kind: filter
+    name: NewUserMinEngagementFilter
+    order: 16
+    role: >-
+      閲覧者が新規または休眠復帰直後のときだけ動き、フォロー外の候補のうち
+      エンゲージメントが閾値未満のものを落とす。
+    controlled_by: viewer
+    author_note: 新規利用者に対しては、反応の少ない投稿はフォロー外に出にくい。
+    evidence:
+      - path: home-mixer/filters/new_user_min_engagement_filter.rs
+        line: 69
+        snippet: 'Some(value) => value >= threshold,'
+    confidence: high
+
+  - id: P028
+    stage: main
+    kind: filter
+    name: InventoryHoldoutFilter
+    order: 17
+    role: >-
+      効果測定用のホールドアウト。投稿種別ごとの比率で、投稿 ID と閲覧者 ID から
+      決定的に算出したハッシュに基づいて候補を落とす。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/filters/inventory_holdout_filter.rs
+        line: 75
+        snippet: 'Self::is_held_out(c.get_original_tweet_id(), viewer_id, percent)'
+    confidence: high
+
+  # ── ハイドレータ（phoenix_candidate_pipeline.rs:325-342 の配線順）
+  # フィルタが判定に使う情報は、この段で候補に書き込まれる。
+  - id: P029
+    stage: main
+    kind: hydrator
+    name: InNetworkCandidateHydrator
+    order: 1
+    role: 候補の著者を閲覧者がフォローしているかを判定し、in_network に書き込む。
+    controlled_by: system
+    author_note: この値が OONRetweetReplyFilter（P016）の判定材料になる。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 326
+        snippet: 'Box::new(InNetworkCandidateHydrator),'
+      - path: home-mixer/candidate_hydrators/in_network_candidate_hydrator.rs
+        line: 43
+        snippet: 'candidate.in_network = hydrated.in_network;'
+    confidence: high
+
+  - id: P030
+    stage: main
+    kind: hydrator
+    name: BidirectionalFollowHydrator
+    order: 2
+    role: 著者と閲覧者が相互フォローかどうかを判定して書き込む。
+    controlled_by: system
+    author_note: 相互フォロー間の返信ブースト（F003）が乗るかどうかがここで決まる。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 327
+        line_end: 329
+        snippet: 'Box::new(BidirectionalFollowHydrator {'
+      - path: home-mixer/candidate_hydrators/bidirectional_follow_hydrator.rs
+        line: 70
+        snippet: 'candidate.is_mutual_follow_author = hydrated.is_mutual_follow_author;'
+    confidence: high
+
+  - id: P031
+    stage: main
+    kind: hydrator
+    name: CoreDataCandidateHydrator
+    order: 3
+    role: >-
+      著者 ID・リポスト元・返信先などの基本メタデータを取得して書き込む。
+      ここで埋まらなかった候補は次の段の CoreDataHydrationFilter（P013）で落ちる。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 330
+        snippet: 'Box::new(core_data_hydrator),'
+      - path: home-mixer/candidate_hydrators/core_data_candidate_hydrator.rs
+        line: 124
+        line_end: 126
+        snippet: 'candidate.in_reply_to_tweet_id = hydrated.in_reply_to_tweet_id;'
+    confidence: high
+
+  - id: P032
+    stage: main
+    kind: hydrator
+    name: QuoteHydrator
+    order: 4
+    role: 引用元の投稿 ID・引用元著者・引用元著者からのブロック有無を書き込む。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 331
+        snippet: 'Box::new(QuoteHydrator::new(tes_client.clone(), socialgraph_client.clone()).await),'
+      - path: home-mixer/candidate_hydrators/quote_hydrator.rs
+        line: 171
+        snippet: 'candidate.quoted_tweet_id = hydrated.quoted_tweet_id;'
+    confidence: high
+
+  - id: P033
+    stage: main
+    kind: hydrator
+    name: MediaInfoHydrator
+    order: 5
+    role: メディアの有無と動画の最短長を書き込む。
+    controlled_by: system
+    author_note: この値が VideoFilter（P025）と動画視聴系の重みの判定に使われる。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 332
+        snippet: 'Box::new(MediaInfoHydrator::new(media_info_cache_client).await),'
+      - path: home-mixer/candidate_hydrators/media_info_hydrator.rs
+        line: 99
+        line_end: 100
+        snippet: 'candidate.min_video_duration_ms = hydrated.min_video_duration_ms;'
+    confidence: high
+
+  - id: P034
+    stage: main
+    kind: hydrator
+    name: SubscriptionHydrator
+    order: 6
+    role: 購読者限定投稿かどうかを書き込む。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 333
+        snippet: 'Box::new(SubscriptionHydrator::new(tes_client.clone()).await),'
+      - path: home-mixer/candidate_hydrators/subscription_hydrator.rs
+        line: 80
+        snippet: 'candidate.subscription_author_id = hydrated.subscription_author_id;'
+    confidence: high
+
+  - id: P035
+    stage: main
+    kind: hydrator
+    name: GizmoduckCandidateHydrator
+    order: 7
+    role: 著者のフォロワー数・スクリーンネーム・NSFW 判定などのアカウント属性を書き込む。
+    controlled_by: system
+    author_note: ここで書かれる nsfw_author が OONNsfwSimclustersFilter（P017）の判定材料になる。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 334
+        snippet: 'Box::new(GizmoduckCandidateHydrator::new(gizmoduck_client).await),'
+      - path: home-mixer/candidate_hydrators/gizmoduck_hydrator.rs
+        line: 159
+        snippet: 'candidate.nsfw_author = hydrated.nsfw_author;'
+    confidence: high
+
+  - id: P036
+    stage: main
+    kind: hydrator
+    name: BlockedByHydrator
+    order: 8
+    role: 著者が閲覧者をブロックしているかを書き込む。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 335
+        snippet: 'Box::new(BlockedByHydrator::new(socialgraph_client).await),'
+      - path: home-mixer/candidate_hydrators/blocked_by_hydrator.rs
+        line: 55
+        snippet: 'candidate.author_blocks_viewer = hydrated.author_blocks_viewer;'
+    confidence: high
+
+  - id: P037
+    stage: main
+    kind: hydrator
+    name: FilteredTopicsHydrator
+    order: 9
+    role: 投稿に紐づくトピック ID を書き込む。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 336
+        line_end: 338
+        snippet: 'Box::new(FilteredTopicsHydrator {'
+      - path: home-mixer/candidate_hydrators/filtered_topics_hydrator.rs
+        line: 129
+        snippet: 'candidate.filtered_topic_ids = hydrated.filtered_topic_ids;'
+    confidence: high
+
+  - id: P038
+    stage: main
+    kind: hydrator
+    name: LanguageCodeHydrator
+    order: 10
+    role: 投稿の言語コードを書き込む。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 339
+        snippet: 'Box::new(LanguageCodeHydrator::new(tes_client.clone()).await),'
+      - path: home-mixer/candidate_hydrators/language_code_hydrator.rs
+        line: 82
+        snippet: 'candidate.language_code = hydrated.language_code;'
+    confidence: high
+
+  - id: P039
+    stage: main
+    kind: hydrator
+    name: EngagementCountsHydrator
+    order: 11
+    role: いいね数・返信数・リポスト数の実測値を書き込む。
+    controlled_by: system
+    author_note: >-
+      これが「実際に付いた反応の数」。スコアの重みが掛かるのはこの値ではなく
+      モデルの予測確率のほう（F014）。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 340
+        snippet: 'Box::new(EngagementCountsHydrator::new(engagement_counts_client).await),'
+      - path: home-mixer/candidate_hydrators/engagement_counts_hydrator.rs
+        line: 158
+        line_end: 160
+        snippet: 'candidate.fav_count = hydrated.fav_count;'
+    confidence: high
+
+  - id: P040
+    stage: main
+    kind: hydrator
+    name: SemanticIdHydrator
+    order: 12
+    role: 投稿の意味的な ID（分類）を書き込む。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 341
+        snippet: 'Box::new(SemanticIdHydrator::new(sid_client)),'
+      - path: home-mixer/candidate_hydrators/semantic_id_hydrator.rs
+        line: 117
+        snippet: 'candidate.semantic_ids = hydrated.semantic_ids;'
+    confidence: high
+
+  # ── 選択後のハイドレータ（phoenix_candidate_pipeline.rs:400-415）
+  # セレクタで上位 50 件に絞ったあとに走る。高コストな処理を全候補にかけないための配置。
+  - id: P041
+    stage: post_selection
+    kind: hydrator
+    name: VFCandidateHydrator
+    order: 1
+    role: 可視性フィルタ（visibility filtering）の判定結果を候補に付ける。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 400
+        line_end: 403
+        snippet: 'VFCandidateHydrator::new(strato_vf_client.clone(), xai_vf_client.clone()).await,'
+    confidence: high
+
+  - id: P042
+    stage: post_selection
+    kind: hydrator
+    name: AdsBrandSafetyVfHydrator
+    order: 2
+    role: 広告のブランドセーフティ用の安全性ラベルを付ける。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 404
+        line_end: 406
+        snippet: 'Box::new(AdsBrandSafetyVfHydrator {'
+    confidence: high
+
+  - id: P043
+    stage: post_selection
+    kind: hydrator
+    name: TweetTypeMetricsHydrator
+    order: 3
+    role: 投稿の種別（単独・リプライ・リポスト等）の計測用メトリクスを付ける。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 407
+        snippet: 'Box::new(TweetTypeMetricsHydrator::new()),'
+    confidence: high
+
+  - id: P044
+    stage: post_selection
+    kind: hydrator
+    name: FollowingRepliedUsersHydrator
+    order: 4
+    role: 会話の参加者のうち閲覧者がフォローしている人の情報を付ける。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 408
+        snippet: 'Box::new(FollowingRepliedUsersHydrator),'
+    confidence: high
+
+  - id: P045
+    stage: post_selection
+    kind: hydrator
+    name: MutualFollowJaccardHydrator
+    order: 5
+    role: 閲覧者と著者の相互フォロー集合の重なり（Jaccard 係数）を付ける。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 409
+        line_end: 411
+        snippet: 'Box::new(MutualFollowJaccardHydrator {'
+    confidence: high
+
+  - id: P046
+    stage: post_selection
+    kind: hydrator
+    name: TopicFeedbackContextHydrator
+    order: 6
+    role: トピックに対するフィードバック用の文脈情報を付ける。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 412
+        line_end: 414
+        snippet: 'Box::new(TopicFeedbackContextHydrator {'
+    confidence: high
+
+  # ── 選択後のフィルタ（phoenix_candidate_pipeline.rs:417-421）
+  # ここで落ちた分だけ、返る件数は result_size の 35 より少なくなりうる。
+  - id: P047
+    stage: post_selection
+    kind: filter
+    name: VFFilter
+    order: 1
+    role: 可視性フィルタの判定に基づいて候補を落とす。
+    controlled_by: system
+    author_note: 安全性ラベルによる出し分け。判定モデル自体は本リポジトリに含まれない。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 418
+        snippet: 'Box::new(VFFilter),'
+    confidence: high
+
+  - id: P048
+    stage: post_selection
+    kind: filter
+    name: AncillaryVFFilter
+    order: 2
+    role: 引用元・リポスト元など付随する投稿の可視性に基づいて落とす。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 419
+        snippet: 'Box::new(AncillaryVFFilter),'
+    confidence: high
+
+  - id: P049
+    stage: post_selection
+    kind: filter
+    name: DedupConversationFilter
+    order: 3
+    role: 同じ会話スレッドから複数の候補が残ったときに重複を落とす。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 420
+        snippet: 'Box::new(DedupConversationFilter),'
+    confidence: high
