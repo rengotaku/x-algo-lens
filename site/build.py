@@ -248,6 +248,30 @@ def n(stage, kind):
     return len([c for c in COMPONENTS if c['stage'] == stage and c['kind'] == kind])
 
 
+def n_ctl(kind, controlled_by, stage='main'):
+    return len([c for c in COMPONENTS
+                if c['stage'] == stage and c['kind'] == kind and c['controlled_by'] == controlled_by])
+
+
+def n_disabled_sources():
+    """role に「既定で無効」と書かれたソースの数。台帳の記述から数える。"""
+    return len([c for c in COMPONENTS
+                if c['kind'] == 'source' and '既定で無効' in c['role']])
+
+
+# よく使う件数。散文にも見出しにも、ここから引いた値だけを埋める
+N_SRC = n('main', 'source')
+N_HYD = n('main', 'hydrator')
+N_FIL = n('main', 'filter')
+N_SCO = n('main', 'scorer')
+N_PS_HYD = n('post_selection', 'hydrator')
+N_PS_FIL = n('post_selection', 'filter')
+N_SRC_OFF = n_disabled_sources()
+N_FIL_AUTHOR = n_ctl('filter', 'author')
+N_FIL_VIEWER = n_ctl('filter', 'viewer')
+N_FIL_SYSTEM = n_ctl('filter', 'system')
+
+
 FOOT = """  <footer>
     <p>
       対象は <code>xai-org/x-algorithm</code> の commit <code>a389166f</code>（Apache-2.0）。
@@ -289,18 +313,18 @@ def header(title, lede, current):
 SOURCES = header(
     '候補ソース',
     'タイムラインに出る前に、まず<b>候補として拾われる</b>必要がある。'
-    'その入口が 7 本あり、それぞれ別の理屈で投稿を連れてくる。',
+    f'その入口が {N_SRC} 本あり、それぞれ別の理屈で投稿を連れてくる。',
     'sources') + f"""
 
   <section>
-    <div><p class="eyebrow">概念</p><h2>7 本の網を同時に投げている</h2></div>
+    <div><p class="eyebrow">概念</p><h2>{N_SRC} 本の網を同時に投げている</h2></div>
     <p>
       候補集めは「1 本の検索」ではない。フォロー中の投稿を取る網、興味の近い投稿を取る網、
       話題から取る網が<b>並行して投げられ、獲れたものが 1 つの籠にまとめられる</b>。
       どの網にも掛からなければ、その投稿は以降の段に一度も現れない。
     </p>
     <p>
-      網ごとに獲れる上限が決まっていて、しかも <b>7 本のうち 2 本は既定で畳まれている</b>。
+      網ごとに獲れる上限が決まっていて、しかも <b>{N_SRC} 本のうち {N_SRC_OFF} 本は既定で畳まれている</b>。
       「候補が無限にあってそこから選ばれる」のではなく、入口の時点ですでに絞られている。
     </p>
   </section>
@@ -311,13 +335,13 @@ SOURCES = header(
       <div class="canvas">
         {ipo_svg(1,
                  ('利用者の手がかり', '利用者 ID・最近反応した投稿・リクエストの種類'),
-                 '7 本の候補ソースを実行する',
+                 f'{N_SRC} 本の候補ソースを実行する',
                  ['フォロー中の投稿を取る（Thunder）',
                   '興味の近い投稿を取る（SimClusters・Phoenix）',
                   '話題・キャッシュから取る',
                   '各ソースが上限件数まで取得する'],
                  ('候補投稿の集合', '重複あり・属性はまだ無い'),
-                 '既定で無効なソースが 2 本ある。動く本数はリクエストの種類でも変わる。')}
+                 f'既定で無効なソースが {N_SRC_OFF} 本ある。動く本数はリクエストの種類でも変わる。')}
       </div>
       <figcaption>
         入口には「その投稿がよいか」の判断は無い。<b>誰の何に近いか、いつのものか</b>で拾われる。
@@ -330,7 +354,7 @@ SOURCES = header(
     <div><p class="eyebrow">図</p><h2>ソースごとの上限と、既定の有効・無効</h2></div>
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 900 300" role="img" aria-label="7 つの候補ソースの既定上限件数。Thunder 1200、Phoenix 1000、SimClusters と TweetMixer が 800、PhoenixMOE が 200。TweetMixer と PhoenixMOE は既定で無効">
+        <svg viewBox="0 0 900 300" role="img" aria-label="{N_SRC} つの候補ソースの既定上限件数。Thunder 1200、Phoenix 1000、SimClusters と TweetMixer が 800、PhoenixMOE が 200。TweetMixer と PhoenixMOE は既定で無効">
           <g class="s-label" font-size="12.5" text-anchor="end" fill="currentColor">
             <text x="200" y="46">ThunderSource</text>
             <text x="200" y="80">PhoenixSource</text>
@@ -372,7 +396,7 @@ SOURCES = header(
   </section>
 
   <section>
-    <div><p class="eyebrow">定義</p><h2>7 本それぞれ</h2></div>
+    <div><p class="eyebrow">定義</p><h2>{N_SRC} 本それぞれ</h2></div>
     {comp_table('main', 'source')}
   </section>
 
@@ -382,7 +406,7 @@ SOURCES = header(
       <div class="panel can">
         <h3>コードから言える</h3>
         <ul>
-          <li>入口は 7 本で、うち 2 本は既定で無効</li>
+          <li>入口は {N_SRC} 本で、うち {N_SRC_OFF} 本は既定で無効</li>
           <li>1 本あたりの上限は 200〜1200 件</li>
           <li>SimClusters と TweetMixer は 48 時間以内の投稿に限る</li>
         </ul>
@@ -390,7 +414,7 @@ SOURCES = header(
       <div class="panel cannot">
         <h3>コードからは言えない</h3>
         <ul>
-          <li>7 本合計で何件集まるか（重複排除は後段なので単純な足し算にならない）</li>
+          <li>{N_SRC} 本合計で何件集まるか（重複排除は後段なので単純な足し算にならない）</li>
           <li>Phoenix retrieval が何を根拠に投稿を選ぶか（モデルは非公開）</li>
           <li>どのソース経由が最終的に残りやすいか</li>
         </ul>
@@ -416,7 +440,7 @@ HYDRATORS = header(
     <div><p class="eyebrow">概念</p><h2>候補に「身元」を付ける段</h2></div>
     <p>
       ソースから来た候補は、乱暴に言えば投稿 ID の束でしかない。
-      これを <b>12 個のハイドレータが順に外部サービスへ問い合わせ、属性を書き込んでいく</b>。
+      これを <b>{N_HYD} 個のハイドレータが順に外部サービスへ問い合わせ、属性を書き込んでいく</b>。
       フォロー関係、著者のアカウント属性、メディアの有無、実測のいいね数——
       次の段で「落とすかどうか」を決めるための材料が、ここで揃う。
     </p>
@@ -432,7 +456,7 @@ HYDRATORS = header(
       <div class="canvas">
         {ipo_svg(2,
                  ('候補投稿の集合', '投稿 ID 中心。判断材料はまだ無い'),
-                 '12 個のハイドレータを順に適用する',
+                 f'{N_HYD} 個のハイドレータを順に適用する',
                  ['フォロー関係を判定して書き込む',
                   '著者の属性・メディア・言語を取得する',
                   '実測のいいね数・返信数を取得する',
@@ -500,7 +524,7 @@ HYDRATORS = header(
             <line x1="150" y1="296" x2="350" y2="296" /><line x1="530" y1="296" x2="740" y2="296" />
             <line x1="150" y1="336" x2="350" y2="336" /><line x1="530" y1="336" x2="740" y2="336" />
           </g>
-          <text class="s-label muted" x="20" y="384" font-size="11">数字は各段での配線順。12 個のうち、フィルタの判定に直接使われるものを抜き出した。</text>
+          <text class="s-label muted" x="20" y="384" font-size="11">数字は各段での配線順。{N_HYD} 個のうち、フィルタの判定に直接使われるものを抜き出した。</text>
         </svg>
       </div>
       <figcaption>
@@ -513,7 +537,7 @@ HYDRATORS = header(
   </section>
 
   <section>
-    <div><p class="eyebrow">定義</p><h2>12 個それぞれ</h2></div>
+    <div><p class="eyebrow">定義</p><h2>{N_HYD} 個それぞれ</h2></div>
     {comp_table('main', 'hydrator')}
   </section>
 
@@ -538,14 +562,14 @@ HYDRATORS = header(
 # ═══════════════════════════ 画報 3: フィルタ
 FILTERS = header(
     'フィルタ',
-    '点を付ける前に、<b>0 か 1 で落とす</b>関門が 17 個。'
+    '点を付ける前に、<b>0 か 1 で落とす</b>関門が {N_FIL} 個。'
     'ここで落ちた候補は、どれだけ良い投稿でも二度と戻ってこない。',
     'filters') + f"""
 
   <section>
     <div><p class="eyebrow">概念</p><h2>関門は直列。1 つでも引っかかれば終わり</h2></div>
     <p>
-      フィルタは点数ではない。<b>通るか落ちるかの二択</b>で、17 個が一列に並んでいる。
+      フィルタは点数ではない。<b>通るか落ちるかの二択</b>で、{N_FIL} 個が一列に並んでいる。
       前の段で貼られた属性を見て、条件に当たれば落とす。
       スコアで挽回するという発想が通じないのは、そもそも採点まで到達しないから。
     </p>
@@ -562,13 +586,13 @@ FILTERS = header(
       <div class="canvas">
         {ipo_svg(3,
                  ('属性の付いた候補', 'フォロー関係・著者属性・メディア等'),
-                 '17 個のフィルタを順に適用する',
+                 f'{N_FIL} 個のフィルタを順に適用する',
                  ['重複・データ欠落を落とす',
                   '経過時間と投稿の形式で落とす',
                   '閲覧者の既読・ミュート・ブロックで落とす',
                   '効果測定用のホールドアウトで落とす'],
                  ('生き残った候補', 'ここから採点に進む'),
-                 '各フィルタは条件付きで無効化されうるので、常に 17 個すべてが評価されるとは限らない。')}
+                 '各フィルタは条件付きで無効化されうるので、常に {N_FIL} 個すべてが評価されるとは限らない。')}
       </div>
       <figcaption>
         この段は候補を<b>減らすだけ</b>で、順番も点数も付けない。
@@ -578,11 +602,11 @@ FILTERS = header(
   </section>
 
   <section>
-    <div><p class="eyebrow">図 1</p><h2>17 個の並びと、誰の都合で効くか</h2></div>
+    <div><p class="eyebrow">図 1</p><h2>{N_FIL} 個の並びと、誰の都合で効くか</h2></div>
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 900 250" role="img" aria-label="17 個のフィルタが直列に並ぶ図。投稿者が影響できるのは 3 番目、5 番目、6 番目の 3 個だけ">
-          <text class="s-label muted" x="20" y="26" font-size="11.5">候補はこの 17 個を順に通り、どれか 1 つで落ちればそこで終わる</text>
+        <svg viewBox="0 0 900 250" role="img" aria-label="{N_FIL} 個のフィルタが直列に並ぶ図。投稿者が影響できるのは {N_FIL_AUTHOR} 個だけ">
+          <text class="s-label muted" x="20" y="26" font-size="11.5">候補はこの {N_FIL} 個を順に通り、どれか 1 つで落ちればそこで終わる</text>
           <g stroke-width="1.5">
             <rect x="20" y="44" width="44" height="44" rx="3" class="stroke" style="color: var(--ink-3)" />
             <rect x="70" y="44" width="44" height="44" rx="3" class="stroke" style="color: var(--ink-3)" />
@@ -632,15 +656,15 @@ FILTERS = header(
             <text x="242" y="156">フォロー外の RT・リプライは落ちる</text>
           </g>
           <g class="s-label" font-size="11.5">
-            <text x="20" y="196" style="fill: var(--boost)">■ 投稿者が影響できる（3 個）</text>
-            <text x="270" y="196" style="fill: var(--accent)">□ 閲覧者の設定・履歴で決まる（9 個）</text>
-            <text x="600" y="196" style="fill: var(--ink-3)">□ 運用・整合のため（5 個）</text>
+            <text x="20" y="196" style="fill: var(--boost)">■ 投稿者が影響できる（{N_FIL_AUTHOR} 個）</text>
+            <text x="270" y="196" style="fill: var(--accent)">□ 閲覧者の設定・履歴で決まる（{N_FIL_VIEWER} 個）</text>
+            <text x="600" y="196" style="fill: var(--ink-3)">□ 運用・整合のため（{N_FIL_SYSTEM} 個）</text>
           </g>
           <text class="s-label muted" x="20" y="226" font-size="11.5">後半はほぼ閲覧者側の事情。同じ投稿でも、誰のタイムラインかで結果が変わる。</text>
         </svg>
       </div>
       <figcaption>
-        <b>投稿者が動かせるのは前半の 3 個だけ。</b>
+        <b>投稿者が動かせるのは前半の {N_FIL_AUTHOR} 個だけ。</b>
         残りは投稿の良し悪しとは無関係な理由で落ちる。
         「良い投稿なのに伸びない」の一部は、ここで説明がつく。
       </figcaption>
@@ -654,7 +678,7 @@ FILTERS = header(
       <h2>形式だけで足切りされる。中身は見られていない</h2>
     </div>
     <p>
-      17 個のうち 5 番目のフィルタは、<b>投稿の形式とフォロー関係の掛け算</b>だけで落とす。
+      {N_FIL} 個のうち 5 番目のフィルタは、<b>投稿の形式とフォロー関係の掛け算</b>だけで落とす。
       内容は一切見ない。この 1 個の挙動を表にすると次のようになる。
     </p>
     <figure>
@@ -731,7 +755,7 @@ FILTERS = header(
   </section>
 
   <section>
-    <div><p class="eyebrow">定義</p><h2>17 個それぞれ</h2></div>
+    <div><p class="eyebrow">定義</p><h2>{N_FIL} 個それぞれ</h2></div>
     <div class="legend">
       <span><span class="chip author">投稿者</span> 投稿の作り方・内容で結果が変わる</span>
       <span><span class="chip viewer">閲覧者</span> 見る人の設定・履歴で決まる</span>
@@ -783,7 +807,7 @@ SCORING = header(
       <div class="canvas">
         {ipo_svg(4,
                  ('生き残った候補', 'フィルタを通過したもの'),
-                 '3 段のスコアラーを順に適用する',
+                 f'{N_SCO} 段のスコアラーを順に適用する',
                  ['外部モデルがアクション別の確率を予測する',
                   '予測値に重みを掛けて 1 本のスコアにする',
                   '同じ著者の連続とフォロー外に減衰を掛ける',
@@ -799,7 +823,7 @@ SCORING = header(
   </section>
 
   <section>
-    <div><p class="eyebrow">図 1</p><h2>採点は 3 段。重みは真ん中で掛かる</h2></div>
+    <div><p class="eyebrow">図 1</p><h2>採点は {N_SCO} 段。重みは真ん中で掛かる</h2></div>
     <figure>
       <div class="canvas">
         <svg viewBox="0 0 900 220" role="img" aria-label="採点の 3 段。外部モデルがアクション別の確率を予測し、重み付き和で 1 本のスコアにし、2 段目のモデルが再採点する">
@@ -954,7 +978,7 @@ SCORING = header(
   </section>
 
   <section>
-    <div><p class="eyebrow">定義</p><h2>3 段それぞれ</h2></div>
+    <div><p class="eyebrow">定義</p><h2>{N_SCO} 段それぞれ</h2></div>
     {comp_table('main', 'scorer')}
   </section>
 
@@ -1013,10 +1037,10 @@ SELECTION = header(
       <div class="canvas">
         {ipo_svg(5,
                  ('スコア付き候補', '順序を決める数値を持っている'),
-                 'セレクタと選択後の 9 部品を適用する',
+                 'セレクタと選択後の {N_PS_HYD + N_PS_FIL} 部品を適用する',
                  ['スコア降順に並べて上位 50 件を選ぶ',
-                  '選択後ハイドレータ 6 個が情報を足す',
-                  '選択後フィルタ 3 個が可視性で落とす',
+                  f'選択後ハイドレータ {N_PS_HYD} 個が情報を足す',
+                  f'選択後フィルタ {N_PS_FIL} 個が可視性で落とす',
                   '最終的に 35 件へ切る'],
                  ('外側へ渡す投稿', '35 件以下。ここが内側の出口'),
                  'スコアが無い候補は負の無限大として扱われ、最後尾に落ちる。')}
@@ -1029,10 +1053,10 @@ SELECTION = header(
   </section>
 
   <section>
-    <div><p class="eyebrow">図</p><h2>50 → 選択後 9 部品 → 35</h2></div>
+    <div><p class="eyebrow">図</p><h2>50 → 選択後 {N_PS_HYD + N_PS_FIL} 部品 → 35</h2></div>
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 900 200" role="img" aria-label="上位 50 件を選んだ後に 6 個のハイドレータと 3 個のフィルタが走り、最後に 35 件へ切られる流れ">
+        <svg viewBox="0 0 900 200" role="img" aria-label="上位 50 件を選んだ後に {N_PS_HYD} 個のハイドレータと {N_PS_FIL} 個のフィルタが走り、最後に 35 件へ切られる流れ">
           <defs>
             <marker id="se" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M 0 1 L 9 5 L 0 9 z" fill="currentColor" />
@@ -1057,8 +1081,8 @@ SELECTION = header(
             <text x="825" y="100">result_size</text>
           </g>
           <g class="s-label muted" font-size="10.5" text-anchor="middle">
-            <text x="340" y="116">6 個</text>
-            <text x="600" y="116">3 個</text>
+            <text x="340" y="116">{N_PS_HYD} 個</text>
+            <text x="600" y="116">{N_PS_FIL} 個</text>
           </g>
           <g class="stroke" stroke-width="1.25" marker-end="url(#se)">
             <line x1="170" y1="89" x2="246" y2="89" />
@@ -1078,9 +1102,9 @@ SELECTION = header(
   <section>
     <div><p class="eyebrow">定義</p><h2>セレクタ</h2></div>
     {comp_table('main', 'selector')}
-    <div><p class="eyebrow">定義</p><h2>選択後のハイドレータ 6 個</h2></div>
+    <div><p class="eyebrow">定義</p><h2>選択後のハイドレータ {N_PS_HYD} 個</h2></div>
     {comp_table('post_selection', 'hydrator')}
-    <div><p class="eyebrow">定義</p><h2>選択後のフィルタ 3 個</h2></div>
+    <div><p class="eyebrow">定義</p><h2>選択後のフィルタ {N_PS_FIL} 個</h2></div>
     {comp_table('post_selection', 'filter')}
   </section>
 
@@ -1434,14 +1458,14 @@ HUB_BODY = f"""  <header>
   <section>
     <div><p class="eyebrow">連載</p><h2>段ごとに 1 枚</h2></div>
     <p>
-      内側の 5 つの段を、それぞれ <b>概念 → Input / Process / Output → 図 → 部品の定義 → 深堀り</b> の順で
+      内側の {len(SERIES)} つの段を、それぞれ <b>概念 → Input / Process / Output → 図 → 部品の定義 → 深堀り</b> の順で
       1 枚にまとめてある。上から順に読むと、候補が生まれてから出口に届くまでを追える。
     </p>
     <div class="cards">
       <a class="card" href="{url('sources')}">
         <span class="kicker">段 1 · Input</span>
         <span class="name">候補ソース</span>
-        <span class="desc">7 本の網を同時に投げて候補を集める。うち 2 本は既定で畳まれている。</span>
+        <span class="desc">{N_SRC} 本の網を同時に投げて候補を集める。うち {N_SRC_OFF} 本は既定で畳まれている。</span>
         <span class="meta">図 2 ／ 部品 {n('main', 'source')}</span>
       </a>
       <a class="card" href="{url('hydrators')}">
@@ -1453,7 +1477,7 @@ HUB_BODY = f"""  <header>
       <a class="card" href="{url('filters')}">
         <span class="kicker">段 3 · Gate</span>
         <span class="name">フィルタ</span>
-        <span class="desc">0 か 1 で落とす関門。投稿者が影響できるのは 17 個中 3 個だけ。</span>
+        <span class="desc">0 か 1 で落とす関門。投稿者が影響できるのは {N_FIL} 個中 {N_FIL_AUTHOR} 個だけ。</span>
         <span class="meta">図 3 ／ 部品 {n('main', 'filter')}</span>
       </a>
       <a class="card" href="{url('scoring')}">
@@ -1505,7 +1529,7 @@ HUB_BODY = f"""  <header>
           </tr>
           <tr>
             <td>フィルタ</td><td>0 か 1</td>
-            <td>17 個が直列。フォロー外に届けたいならリプライやリポストではなく単独ポストである必要がある。重みでは補償できない。</td>
+            <td>{N_FIL} 個が直列。フォロー外に届けたいならリプライやリポストではなく単独ポストである必要がある。重みでは補償できない。</td>
             <td><a href="{url('filters')}">フィルタ</a></td>
           </tr>
           <tr>
