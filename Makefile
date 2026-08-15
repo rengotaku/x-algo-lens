@@ -19,6 +19,10 @@ verify: ## 台帳の evidence を実ファイルと照合（不一致があれ�
 stats: ## 台帳の集計（要因数・操作可能性の内訳）
 	@python3 scripts/verify-evidence.py --stats
 
+.PHONY: site
+site: ## 台帳から解説ページを生成（site/dist/）
+	@python3 site/build.py
+
 .PHONY: ci
 ci: fetch verify ## CI 相当（取得 → 検証）
 

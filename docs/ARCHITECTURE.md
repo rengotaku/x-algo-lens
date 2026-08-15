@@ -15,6 +15,19 @@ analysis/components.yaml  根拠台帳③: パイプライン構成要素のカ�
                                   1 件でも不一致なら exit 1
 ```
 
+### 台帳から解説ページへ
+
+```
+analysis/*.yaml  →  site/build.py  →  site/dist/*.html   （make site）
+                         ↑
+                  site/links.json（公開先 URL）
+```
+
+ページに出る件数・部品名・役割は**すべて台帳から導出する**。手で書いた数字を混ぜると、
+台帳を更新しても直らない箇所ができる。`site/dist/` は生成物なのでコミットしない。
+
+`links.json` に無いキーが参照されたら生成を**中断する**（リンク切れのページを黙って出さないため）。
+
 3 本の台帳はスキーマが違う（`factors.yaml` は `stage`/`author_controllable`/`direction`、
 `code.yaml` は `topic`/`takeaway`、`components.yaml` は `kind`/`order`/`controlled_by`）が、
 **evidence の照合は同じ関数 1 つ**（`check_evidence`）を通る。
