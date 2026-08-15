@@ -253,10 +253,64 @@ def n_ctl(kind, controlled_by, stage='main'):
                 if c['stage'] == stage and c['kind'] == kind and c['controlled_by'] == controlled_by])
 
 
+AVAIL = ('default_on', 'default_off', 'conditional')
+
+
+def sources_sorted():
+    """図に出す順。有効なものを上に、上限の大きい順。上限なしは最後。"""
+    srcs = [c for c in COMPONENTS if c['kind'] == 'source']
+    for c in srcs:
+        if c.get('availability') not in AVAIL or 'limit_default' not in c:
+            sys.exit(f"NG: source {c['name']} に availability / limit_default が無い（図を組み立てられない）")
+    rank = {'default_on': 0, 'conditional': 2, 'default_off': 1}
+    return sorted(srcs, key=lambda c: (rank[c['availability']], -(c['limit_default'] or 0), c['order']))
+
+
 def n_disabled_sources():
-    """role に「既定で無効」と書かれたソースの数。台帳の記述から数える。"""
     return len([c for c in COMPONENTS
-                if c['kind'] == 'source' and '既定で無効' in c['role']])
+                if c['kind'] == 'source' and c.get('availability') == 'default_off'])
+
+
+def sources_chart_svg():
+    """候補ソースの上限バーチャートを台帳から生成する。"""
+    rows = sources_sorted()
+    top, step, x0, maxw = 34, 34, 216, 480
+    limits = [c['limit_default'] for c in rows if c['limit_default']]
+    scale = maxw / max(limits) if limits else 1
+    labels, bars, values, notes = [], [], [], []
+    for i, c in enumerate(rows):
+        y = top + i * step
+        av, lim = c['availability'], c['limit_default']
+        dim = '' if av == 'default_on' else ' class="muted"'
+        labels.append(f'<text x="200" y="{y + 12}"{dim}>{esc(c["name"])}</text>')
+        if lim:
+            w = round(lim * scale)
+            if av == 'default_on':
+                bars.append(f'<rect x="{x0}" y="{y}" width="{w}" height="16" fill="currentColor" '
+                            f'style="color: var(--boost)" />')
+            else:
+                bars.append(f'<rect x="{x0}" y="{y}" width="{w}" height="16" class="stroke" '
+                            f'stroke-width="1.25" stroke-dasharray="5 4" style="color: var(--ink-3)" />')
+            values.append(f'<text x="{x0 + w + 10}" y="{y + 13}"{dim}>{lim}</text>')
+        else:
+            bars.append(f'<rect x="{x0}" y="{y}" width="400" height="16" class="stroke faint" '
+                        f'stroke-width="1.25" stroke-dasharray="2 4" />')
+            notes.append(f'<text x="{x0 + 410}" y="{y + 13}" class="muted" font-size="10.5">'
+                         f'条件付きで動く（上限の定数なし）</text>')
+    h = top + len(rows) * step + 44
+    return f'''<svg viewBox="0 0 900 {h}" role="img" aria-label="{len(rows)} つの候補ソースの既定上限件数と有効・無効">
+          <g class="s-label" font-size="12.5" text-anchor="end" fill="currentColor">
+            {chr(10).join(labels)}
+          </g>
+          {chr(10).join(bars)}
+          <g class="s-num" font-size="12" text-anchor="start" fill="currentColor">
+            {chr(10).join(values)}
+          </g>
+          <g class="s-label" fill="currentColor">
+            {chr(10).join(notes)}
+          </g>
+          <text class="s-mono" x="{x0}" y="{h - 14}" font-size="10.5" style="fill: var(--ink-3)">実線 = 既定で有効 ／ 破線 = 既定で無効 ／ 点線 = 条件付きで動く</text>
+        </svg>'''
 
 
 # よく使う件数。散文にも見出しにも、ここから引いた値だけを埋める
@@ -354,39 +408,7 @@ SOURCES = header(
     <div><p class="eyebrow">図</p><h2>ソースごとの上限と、既定の有効・無効</h2></div>
     <figure>
       <div class="canvas">
-        <svg viewBox="0 0 900 300" role="img" aria-label="{N_SRC} つの候補ソースの既定上限件数。Thunder 1200、Phoenix 1000、SimClusters と TweetMixer が 800、PhoenixMOE が 200。TweetMixer と PhoenixMOE は既定で無効">
-          <g class="s-label" font-size="12.5" text-anchor="end" fill="currentColor">
-            <text x="200" y="46">ThunderSource</text>
-            <text x="200" y="80">PhoenixSource</text>
-            <text x="200" y="114">SimclustersSource</text>
-            <text x="200" y="148" class="muted">TweetMixerSource</text>
-            <text x="200" y="182" class="muted">PhoenixMOESource</text>
-            <text x="200" y="216" class="muted">PhoenixTopicsSource</text>
-            <text x="200" y="250" class="muted">CachedPostsSource</text>
-          </g>
-          <g style="color: var(--boost)">
-            <rect x="216" y="34" width="480" height="16" fill="currentColor" />
-            <rect x="216" y="68" width="400" height="16" fill="currentColor" />
-            <rect x="216" y="102" width="320" height="16" fill="currentColor" />
-          </g>
-          <g class="stroke" stroke-width="1.25" stroke-dasharray="5 4" style="color: var(--ink-3)">
-            <rect x="216" y="136" width="320" height="16" />
-            <rect x="216" y="170" width="80" height="16" />
-          </g>
-          <g class="stroke faint" stroke-width="1.25" stroke-dasharray="2 4">
-            <rect x="216" y="204" width="400" height="16" />
-          </g>
-          <g class="s-num" font-size="12" text-anchor="start" fill="currentColor">
-            <text x="706" y="47">1200</text>
-            <text x="626" y="81">1000</text>
-            <text x="546" y="115">800</text>
-            <text x="546" y="149" class="muted">800</text>
-            <text x="306" y="183" class="muted">200</text>
-            <text x="626" y="217" class="muted">上限は共用</text>
-          </g>
-          <text class="s-label muted" x="216" y="250" font-size="11.5">キャッシュが 500 件以上あるときだけ動く（上限の定数なし）</text>
-          <text class="s-mono" x="216" y="278" font-size="10.5" style="fill: var(--ink-3)">実線 = 既定で有効 ／ 破線 = 既定で無効 ／ 点線 = 条件付きで動く</text>
-        </svg>
+        {sources_chart_svg()}
       </div>
       <figcaption>
         <b>上限の合計は入口の実数ではない。</b>各ソースは同じ投稿を返しうるし、条件付きのソースは動かないこともある。
