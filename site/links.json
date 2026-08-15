@@ -1,0 +1,10 @@
+{
+  "hub":        "https://claude.ai/code/artifact/f2e36e27-1144-4da0-afe0-a56aac88d149",
+  "sources":    "https://claude.ai/code/artifact/d610d53f-a4dd-44ff-a431-6fdc6fd92931",
+  "hydrators":  "https://claude.ai/code/artifact/b6a17548-24cb-42ea-9eca-7a3c2ba6073e",
+  "filters":    "https://claude.ai/code/artifact/b9fc6571-f3e8-4f25-b461-a2d578c57362",
+  "scoring":    "https://claude.ai/code/artifact/1fab3e64-c0c3-42df-a8b5-9b1bad93f88a",
+  "selection":  "https://claude.ai/code/artifact/5000a83f-ed00-418d-b2ce-183073497ea1",
+  "parts":      "https://claude.ai/code/artifact/a9573a05-e30b-4d99-ad06-a4cc8fd105d9",
+  "ledger":     "https://claude.ai/code/artifact/5ed10674-5c78-4dd7-92a8-f7a1e447a6b1"
+}

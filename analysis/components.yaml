@@ -12,6 +12,8 @@ components:
     stage: main
     kind: source
     name: ThunderSource
+    availability: default_on
+    limit_default: 1200
     order: 1
     role: >-
       フォロー中のユーザーの投稿を Thunder サービスから取得する。
@@ -39,6 +41,8 @@ components:
     stage: main
     kind: source
     name: TweetMixerSource
+    availability: default_off
+    limit_default: 800
     order: 2
     role: >-
       TweetMixer サービスからフォロー外を含む推薦候補を取得する。48 時間以内の投稿に限る。
@@ -66,6 +70,8 @@ components:
     stage: main
     kind: source
     name: SimclustersSource
+    availability: default_on
+    limit_default: 800
     order: 3
     role: >-
       利用者が最近反応した投稿と SimClusters 埋め込み空間で近い投稿を ANN 検索で集める。
@@ -94,6 +100,8 @@ components:
     stage: main
     kind: source
     name: PhoenixSource
+    availability: default_on
+    limit_default: 1000
     order: 4
     role: >-
       Phoenix retrieval（埋め込みベースの検索モデル）から候補を取得する。上限は既定 1000 件。
@@ -125,6 +133,8 @@ components:
     stage: main
     kind: source
     name: PhoenixTopicsSource
+    availability: conditional
+    limit_default: null
     order: 5
     role: >-
       トピック指定のリクエストのときだけ動き、指定トピックに紐づく投稿を Phoenix から取得する。
@@ -144,6 +154,8 @@ components:
     stage: main
     kind: source
     name: PhoenixMOESource
+    availability: default_off
+    limit_default: 200
     order: 6
     role: >-
       Phoenix retrieval の Mixture of Experts 版から候補を取得する。上限は既定 200 件。
@@ -172,6 +184,8 @@ components:
     stage: main
     kind: source
     name: CachedPostsSource
+    availability: conditional
+    limit_default: null
     order: 7
     role: >-
       新規取得をせず、直前のリクエストでキャッシュ済みの投稿をそのまま返す。

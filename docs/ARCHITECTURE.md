@@ -15,6 +15,29 @@ analysis/components.yaml  根拠台帳③: パイプライン構成要素のカ�
                                   1 件でも不一致なら exit 1
 ```
 
+### 台帳から解説ページへ
+
+```
+analysis/*.yaml  →  site/build.py  →  site/dist/*.html          （公開用フラグメント）
+                         ↑        →  site/dist/preview/*.html   （ローカル閲覧用）
+                  site/links.json（公開先 URL）
+```
+
+公開先が `<!doctype>` / `<head>` を付ける仕様なので、`dist/*.html` は骨組みを持たない。
+そのまま `file://` で開くと charset 未宣言で日本語が化けるため、
+閲覧用に charset 付きの完全な文書を `dist/preview/` にも出す。
+
+**部品の件数・名前・役割・分類は台帳から導出する**（`N_SRC` / `N_FIL` 等）。
+手で書いた数字を混ぜると、台帳を更新しても直らない箇所ができる。
+
+一方、パイプラインの定数（上位 50 / 35 件 / 最大 47 / 上限 800 など）は
+`factors.yaml` の `summary` に散文で書かれており構造化フィールドではないため、
+ページ側も散文として持つ。**構造化されているものは必ず導出する**、が線引き。
+
+`site/dist/` は生成物なのでコミットしない。
+
+`links.json` に無いキーが参照されたら生成を**中断する**（リンク切れのページを黙って出さないため）。
+
 3 本の台帳はスキーマが違う（`factors.yaml` は `stage`/`author_controllable`/`direction`、
 `code.yaml` は `topic`/`takeaway`、`components.yaml` は `kind`/`order`/`controlled_by`）が、
 **evidence の照合は同じ関数 1 つ**（`check_evidence`）を通る。
