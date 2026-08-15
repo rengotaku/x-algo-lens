@@ -302,8 +302,11 @@ def ipo_sources_svg():
 
     文字は必ず所属する箱（IN 20-250 / PR 310-590 / OU 650-880）の内側に収める。
     """
-    label = ('<text class="s-label" x="{x}" y="{y}" font-size="{fs}"{extra}'
-             ' fill="currentColor">{t}</text>')
+    # class は 1 つだけ出す（2 つ書くと後ろが無視され、muted が効かない）
+    def label(x, y, fs, t, muted=False):
+        cls = 's-label muted' if muted else 's-label'
+        return (f'<text class="{cls}" x="{x}" y="{y}" font-size="{fs}" '
+                f'fill="currentColor">{t}</text>')
     return (
         f'<svg viewBox="0 0 900 300" role="img" aria-label="候補ソース段の入力・処理・出力。'
         f'入力は利用者 ID と最近の反応とリクエストの種類、処理は {N_SRC} 本のソースが'
@@ -326,26 +329,26 @@ def ipo_sources_svg():
         '<rect x="650" y="38" width="230" height="212" rx="3" class="stroke faint" stroke-width="1.25" />'
 
         + icon_viewer(56, 84)
-        + label.format(x=82, y=80, fs=12.5, extra='', t='利用者 ID')
-        + label.format(x=82, y=96, fs=10, extra=' class="s-label muted"', t='誰のタイムラインか')
+        + label(82, 80, 12.5, '利用者 ID')
+        + label(82, 96, 10, '誰のタイムラインか', muted=True)
 
         + icon_reaction(56, 146)
-        + label.format(x=82, y=142, fs=12.5, extra='', t='最近の反応')
-        + label.format(x=82, y=158, fs=10, extra=' class="s-label muted"', t='いいねした投稿など')
+        + label(82, 142, 12.5, '最近の反応')
+        + label(82, 158, 10, 'いいねした投稿など', muted=True)
 
         + icon_request(56, 208)
-        + label.format(x=82, y=204, fs=12.5, extra='', t='リクエストの種類')
-        + label.format(x=82, y=220, fs=10, extra=' class="s-label muted"', t='通常・トピック指定')
+        + label(82, 204, 12.5, 'リクエストの種類')
+        + label(82, 220, 10, '通常・トピック指定', muted=True)
 
         + f'<text class="s-label" x="450" y="70" font-size="13" text-anchor="middle" '
           f'style="fill: var(--accent)">{N_SRC} 本の網を同時に投げる</text>'
 
         + icon_following(340, 106)
-        + label.format(x=366, y=110, fs=11.5, extra='', t='フォロー中から取る')
+        + label(366, 110, 11.5, 'フォロー中から取る')
         + icon_similar(340, 154)
-        + label.format(x=366, y=158, fs=11.5, extra='', t='興味が近いところから取る')
+        + label(366, 158, 11.5, '興味が近いところから取る')
         + icon_topic(340, 202)
-        + label.format(x=366, y=206, fs=11.5, extra='', t='話題・キャッシュから取る')
+        + label(366, 206, 11.5, '話題・キャッシュから取る')
 
         + '<text class="s-label muted" x="450" y="236" font-size="10.5" text-anchor="middle" '
           'fill="currentColor">それぞれ上限まで取ったら打ち切る</text>'
