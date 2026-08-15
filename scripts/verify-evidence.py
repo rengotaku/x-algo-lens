@@ -61,6 +61,9 @@ class LedgerSpec:
     required: tuple[str, ...]
     enums: dict[str, set[str]]
     stat_keys: tuple[str, ...]
+    # 設定すると、このキーで entries をグループ分けし、各グループの `order` が
+    # 1 始まりの連番（重複なし）であることを検証する。配線順を持つ台帳で使う。
+    order_group: str | None = None
 
     @property
     def path(self) -> Path:
@@ -133,6 +136,7 @@ LEDGERS = (
             "confidence": CONFIDENCE,
         },
         stat_keys=("kind", "controlled_by", "confidence"),
+        order_group="kind",
     ),
 )
 
@@ -275,6 +279,37 @@ def check_entry(spec: LedgerSpec, entry, seen_ids: set[str], cache, fail: Failur
         check_evidence(f"{where} evidence[{i}]", ev, cache, fail)
 
 
+def check_order(spec: LedgerSpec, entries: list, fail: Failures) -> None:
+    """配線順を持つ台帳で、各グループの order が 1 始まりの連番であることを検証する。
+
+    order は「何がどの順で並ぶか」というこの台帳の中心的な主張なので、
+    型・重複・欠番を機械で見る。ここを見ないと、順序が壊れたまま CI が通る。
+    """
+    if not spec.order_group:
+        return
+
+    groups: dict[object, list[int]] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        eid = entry.get("id", "<no id>")
+        order = entry.get("order")
+        if isinstance(order, bool) or not isinstance(order, int) or order < 1:
+            fail.add(f"{spec.filename} {eid}", f"order は 1 以上の整数にする: {order!r}")
+            continue
+        groups.setdefault(entry.get(spec.order_group), []).append(order)
+
+    for group, orders in groups.items():
+        where = f"{spec.filename} {spec.order_group}={group}"
+        expected = list(range(1, len(orders) + 1))
+        if sorted(orders) != expected:
+            dupes = sorted({o for o in orders if orders.count(o) > 1})
+            if dupes:
+                fail.add(where, f"order が重複している: {dupes}")
+            else:
+                fail.add(where, f"order が 1..{len(orders)} の連番でない: {sorted(orders)}")
+
+
 def load_ledger(spec: LedgerSpec, commit: str | None, fail: Failures) -> LedgerResult:
     result = LedgerResult(spec=spec)
     if not spec.path.is_file():
@@ -324,6 +359,10 @@ def main() -> int:
     vendor_ok = check_vendor(commit, fail) if commit else False
 
     results = [load_ledger(spec, commit, fail) for spec in LEDGERS]
+
+    # 配線順の検証は vendor に依存しないので、常に走らせる
+    for res in results:
+        check_order(res.spec, res.entries, fail)
 
     if vendor_ok:
         cache: dict[Path, list[str]] = {}

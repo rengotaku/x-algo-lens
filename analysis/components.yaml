@@ -93,7 +93,7 @@ components:
     order: 4
     role: >-
       Phoenix retrieval（埋め込みベースの検索モデル）から候補を取得する。上限は既定 1000 件。
-      既定で有効で、7 ソースの中では最も多く供給しうる。
+      既定で有効。上限だけで見れば ThunderSource（1200）に次ぐ 2 番目。
     controlled_by: system
     author_note: モデルが何を根拠に選ぶかは本リポジトリに含まれず、コードからは読み取れない。
     evidence:
@@ -495,4 +495,200 @@ components:
       - path: home-mixer/filters/inventory_holdout_filter.rs
         line: 75
         snippet: 'Self::is_held_out(c.get_original_tweet_id(), viewer_id, percent)'
+    confidence: high
+
+  # ── ハイドレータ（phoenix_candidate_pipeline.rs:325-342 の配線順）
+  # フィルタが判定に使う情報は、この段で候補に書き込まれる。
+  - id: P029
+    kind: hydrator
+    name: InNetworkCandidateHydrator
+    order: 1
+    role: 候補の著者を閲覧者がフォローしているかを判定し、in_network に書き込む。
+    controlled_by: system
+    author_note: この値が OONRetweetReplyFilter（P016）の判定材料になる。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 326
+        snippet: 'Box::new(InNetworkCandidateHydrator),'
+      - path: home-mixer/candidate_hydrators/in_network_candidate_hydrator.rs
+        line: 43
+        snippet: 'candidate.in_network = hydrated.in_network;'
+    confidence: high
+
+  - id: P030
+    kind: hydrator
+    name: BidirectionalFollowHydrator
+    order: 2
+    role: 著者と閲覧者が相互フォローかどうかを判定して書き込む。
+    controlled_by: system
+    author_note: 相互フォロー間の返信ブースト（F003）が乗るかどうかがここで決まる。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 327
+        line_end: 329
+        snippet: 'Box::new(BidirectionalFollowHydrator {'
+      - path: home-mixer/candidate_hydrators/bidirectional_follow_hydrator.rs
+        line: 70
+        snippet: 'candidate.is_mutual_follow_author = hydrated.is_mutual_follow_author;'
+    confidence: high
+
+  - id: P031
+    kind: hydrator
+    name: CoreDataCandidateHydrator
+    order: 3
+    role: >-
+      著者 ID・リポスト元・返信先などの基本メタデータを取得して書き込む。
+      ここで埋まらなかった候補は次の段の CoreDataHydrationFilter（P013）で落ちる。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 330
+        snippet: 'Box::new(core_data_hydrator),'
+      - path: home-mixer/candidate_hydrators/core_data_candidate_hydrator.rs
+        line: 124
+        line_end: 126
+        snippet: 'candidate.in_reply_to_tweet_id = hydrated.in_reply_to_tweet_id;'
+    confidence: high
+
+  - id: P032
+    kind: hydrator
+    name: QuoteHydrator
+    order: 4
+    role: 引用元の投稿 ID・引用元著者・引用元著者からのブロック有無を書き込む。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 331
+        snippet: 'Box::new(QuoteHydrator::new(tes_client.clone(), socialgraph_client.clone()).await),'
+      - path: home-mixer/candidate_hydrators/quote_hydrator.rs
+        line: 171
+        snippet: 'candidate.quoted_tweet_id = hydrated.quoted_tweet_id;'
+    confidence: high
+
+  - id: P033
+    kind: hydrator
+    name: MediaInfoHydrator
+    order: 5
+    role: メディアの有無と動画の最短長を書き込む。
+    controlled_by: system
+    author_note: この値が VideoFilter（P025）と動画視聴系の重みの判定に使われる。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 332
+        snippet: 'Box::new(MediaInfoHydrator::new(media_info_cache_client).await),'
+      - path: home-mixer/candidate_hydrators/media_info_hydrator.rs
+        line: 99
+        line_end: 100
+        snippet: 'candidate.min_video_duration_ms = hydrated.min_video_duration_ms;'
+    confidence: high
+
+  - id: P034
+    kind: hydrator
+    name: SubscriptionHydrator
+    order: 6
+    role: 購読者限定投稿かどうかを書き込む。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 333
+        snippet: 'Box::new(SubscriptionHydrator::new(tes_client.clone()).await),'
+      - path: home-mixer/candidate_hydrators/subscription_hydrator.rs
+        line: 80
+        snippet: 'candidate.subscription_author_id = hydrated.subscription_author_id;'
+    confidence: high
+
+  - id: P035
+    kind: hydrator
+    name: GizmoduckCandidateHydrator
+    order: 7
+    role: 著者のフォロワー数・スクリーンネーム・NSFW 判定などのアカウント属性を書き込む。
+    controlled_by: system
+    author_note: ここで書かれる nsfw_author が OONNsfwSimclustersFilter（P017）の判定材料になる。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 334
+        snippet: 'Box::new(GizmoduckCandidateHydrator::new(gizmoduck_client).await),'
+      - path: home-mixer/candidate_hydrators/gizmoduck_hydrator.rs
+        line: 159
+        snippet: 'candidate.nsfw_author = hydrated.nsfw_author;'
+    confidence: high
+
+  - id: P036
+    kind: hydrator
+    name: BlockedByHydrator
+    order: 8
+    role: 著者が閲覧者をブロックしているかを書き込む。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 335
+        snippet: 'Box::new(BlockedByHydrator::new(socialgraph_client).await),'
+      - path: home-mixer/candidate_hydrators/blocked_by_hydrator.rs
+        line: 55
+        snippet: 'candidate.author_blocks_viewer = hydrated.author_blocks_viewer;'
+    confidence: high
+
+  - id: P037
+    kind: hydrator
+    name: FilteredTopicsHydrator
+    order: 9
+    role: 投稿に紐づくトピック ID を書き込む。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 336
+        line_end: 338
+        snippet: 'Box::new(FilteredTopicsHydrator {'
+      - path: home-mixer/candidate_hydrators/filtered_topics_hydrator.rs
+        line: 129
+        snippet: 'candidate.filtered_topic_ids = hydrated.filtered_topic_ids;'
+    confidence: high
+
+  - id: P038
+    kind: hydrator
+    name: LanguageCodeHydrator
+    order: 10
+    role: 投稿の言語コードを書き込む。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 339
+        snippet: 'Box::new(LanguageCodeHydrator::new(tes_client.clone()).await),'
+      - path: home-mixer/candidate_hydrators/language_code_hydrator.rs
+        line: 82
+        snippet: 'candidate.language_code = hydrated.language_code;'
+    confidence: high
+
+  - id: P039
+    kind: hydrator
+    name: EngagementCountsHydrator
+    order: 11
+    role: いいね数・返信数・リポスト数の実測値を書き込む。
+    controlled_by: system
+    author_note: >-
+      これが「実際に付いた反応の数」。スコアの重みが掛かるのはこの値ではなく
+      モデルの予測確率のほう（F014）。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 340
+        snippet: 'Box::new(EngagementCountsHydrator::new(engagement_counts_client).await),'
+      - path: home-mixer/candidate_hydrators/engagement_counts_hydrator.rs
+        line: 158
+        line_end: 160
+        snippet: 'candidate.fav_count = hydrated.fav_count;'
+    confidence: high
+
+  - id: P040
+    kind: hydrator
+    name: SemanticIdHydrator
+    order: 12
+    role: 投稿の意味的な ID（分類）を書き込む。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 341
+        snippet: 'Box::new(SemanticIdHydrator::new(sid_client)),'
+      - path: home-mixer/candidate_hydrators/semantic_id_hydrator.rs
+        line: 117
+        snippet: 'candidate.semantic_ids = hydrated.semantic_ids;'
     confidence: high
