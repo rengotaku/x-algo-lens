@@ -11,6 +11,7 @@
 """
 import html
 import json
+import re
 import sys
 import yaml
 from pathlib import Path
@@ -24,6 +25,9 @@ CODE = yaml.safe_load((LEDGER_DIR / 'code.yaml').read_text(encoding='utf-8'))['o
 SITE = Path(__file__).resolve().parent
 DIST = SITE / 'dist'
 LINKS_FILE = SITE / 'links.json'
+
+# ページに出す件数は必ずここから引く（固定値を書くと台帳更新で矛盾する）
+EVIDENCE_TOTAL = sum(len(e.get('evidence', [])) for e in FACTORS + CODE + COMPONENTS)
 if not LINKS_FILE.is_file():
     sys.exit(f'links.json が無い: {LINKS_FILE}')
 L = json.loads(LINKS_FILE.read_text(encoding='utf-8'))
@@ -254,7 +258,22 @@ FOOT = """  <footer>
 
 
 def page(title, body):
+    """公開用のフラグメント。Artifact 側が <!doctype>/<head>/<body> を付ける。"""
     return f'<title>{title}</title>\n\n{CSS}\n\n<div class="wrap">\n{body}\n</div>\n'
+
+
+def standalone(fragment):
+    """ローカルで開く用に、charset 付きの完全な HTML 文書へ包む。
+
+    公開物 (dist/*.html) は骨組みを持たない仕様なので、そのまま file:// で開くと
+    charset が未宣言になり日本語が化ける。閲覧用はこちらを使う。
+    """
+    title = re.search(r'<title>.*?</title>', fragment, re.S).group(0)
+    style = re.search(r'<style>.*?</style>', fragment, re.S)
+    body = fragment[style.end():]
+    return ('<!doctype html>\n<html lang="ja">\n<head>\n<meta charset="utf-8">\n'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+            f'{title}\n{style.group(0)}\n</head>\n<body>\n{body}\n</body>\n</html>\n')
 
 
 def header(title, lede, current):
@@ -1133,7 +1152,7 @@ LEDGER_BODY = f"""  <header>
           <g class="s-mono muted" font-size="9.5" text-anchor="middle">
             <text x="208" y="65">SHA 照合</text>
             <text x="438" y="65">参照</text>
-            <text x="668" y="65">218 件</text>
+            <text x="668" y="65">{EVIDENCE_TOTAL} 件</text>
           </g>
           <g class="stroke" stroke-width="1" stroke-dasharray="3 3">
             <line x1="785" y1="102" x2="785" y2="126" />
@@ -1459,7 +1478,7 @@ HUB_BODY = f"""  <header>
         <span class="kicker">メタ</span>
         <span class="name">根拠台帳のしくみ</span>
         <span class="desc">なぜこの数字を信用してよいか。行番号と実文字列まで固定した照合と、壊して落ちることの実演。</span>
-        <span class="meta">図 2 ／ 検証 218 件</span>
+        <span class="meta">図 2 ／ 検証 {EVIDENCE_TOTAL} 件</span>
       </a>
     </div>
   </section>
@@ -1523,9 +1542,13 @@ PAGES = {
     'for-you-no-toorimichi.html': ('For You の通り道', HUB_BODY),
 }
 
+PREVIEW = DIST / 'preview'
 DIST.mkdir(exist_ok=True)
+PREVIEW.mkdir(exist_ok=True)
 for fname, (title, body) in PAGES.items():
-    (DIST / fname).write_text(page(title, body), encoding='utf-8')
+    fragment = page(title, body)
+    (DIST / fname).write_text(fragment, encoding='utf-8')
+    (PREVIEW / fname).write_text(standalone(fragment), encoding='utf-8')
     print(f'  {fname:32} {title}')
 
 print(f'\n台帳: factors={len(FACTORS)} code={len(CODE)} components={len(COMPONENTS)} '
@@ -1534,8 +1557,10 @@ print(f'\n台帳: factors={len(FACTORS)} code={len(CODE)} components={len(COMPON
 if _MISSING:
     for f in PAGES:
         (DIST / f).unlink(missing_ok=True)
+        (DIST / 'preview' / f).unlink(missing_ok=True)
     sys.exit('NG: links.json に URL が無いキーが参照された: '
              + ', '.join(sorted(_MISSING))
              + '\n     リンク切れのページを出さないため、生成物を削除して中断した。')
 
-print(f'出力: {DIST.relative_to(ROOT)}/ に {len(PAGES)} 枚')
+print(f'出力: {DIST.relative_to(ROOT)}/ に {len(PAGES)} 枚'
+      f'（ローカル閲覧用は {PREVIEW.relative_to(ROOT)}/）')

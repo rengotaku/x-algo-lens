@@ -18,10 +18,14 @@ analysis/components.yaml  根拠台帳③: パイプライン構成要素のカ�
 ### 台帳から解説ページへ
 
 ```
-analysis/*.yaml  →  site/build.py  →  site/dist/*.html   （make site）
-                         ↑
+analysis/*.yaml  →  site/build.py  →  site/dist/*.html          （公開用フラグメント）
+                         ↑        →  site/dist/preview/*.html   （ローカル閲覧用）
                   site/links.json（公開先 URL）
 ```
+
+公開先が `<!doctype>` / `<head>` を付ける仕様なので、`dist/*.html` は骨組みを持たない。
+そのまま `file://` で開くと charset 未宣言で日本語が化けるため、
+閲覧用に charset 付きの完全な文書を `dist/preview/` にも出す。
 
 ページに出る件数・部品名・役割は**すべて台帳から導出する**。手で書いた数字を混ぜると、
 台帳を更新しても直らない箇所ができる。`site/dist/` は生成物なのでコミットしない。
