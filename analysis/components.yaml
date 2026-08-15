@@ -9,6 +9,7 @@ source_ref: a389166f6cf5da70a286b568c87695d4dcdce3a1
 components:
   # ── 候補ソース（phoenix_candidate_pipeline.rs:315-323 の配線順）
   - id: P001
+    stage: main
     kind: source
     name: ThunderSource
     order: 1
@@ -35,6 +36,7 @@ components:
     confidence: high
 
   - id: P002
+    stage: main
     kind: source
     name: TweetMixerSource
     order: 2
@@ -61,6 +63,7 @@ components:
     confidence: high
 
   - id: P003
+    stage: main
     kind: source
     name: SimclustersSource
     order: 3
@@ -88,6 +91,7 @@ components:
     confidence: high
 
   - id: P004
+    stage: main
     kind: source
     name: PhoenixSource
     order: 4
@@ -118,6 +122,7 @@ components:
     confidence: high
 
   - id: P005
+    stage: main
     kind: source
     name: PhoenixTopicsSource
     order: 5
@@ -136,6 +141,7 @@ components:
     confidence: medium
 
   - id: P006
+    stage: main
     kind: source
     name: PhoenixMOESource
     order: 6
@@ -163,6 +169,7 @@ components:
     confidence: high
 
   - id: P007
+    stage: main
     kind: source
     name: CachedPostsSource
     order: 7
@@ -186,6 +193,7 @@ components:
 
   # ── 採点（phoenix_candidate_pipeline.rs:396 の配線順）
   - id: P008
+    stage: main
     kind: scorer
     name: PhoenixScorer
     order: 1
@@ -205,6 +213,7 @@ components:
     confidence: high
 
   - id: P009
+    stage: main
     kind: scorer
     name: RankingScorer
     order: 2
@@ -228,6 +237,7 @@ components:
     confidence: high
 
   - id: P010
+    stage: main
     kind: scorer
     name: VMRanker
     order: 3
@@ -251,6 +261,7 @@ components:
 
   # ── 選択
   - id: P011
+    stage: main
     kind: selector
     name: TopKScoreSelector
     order: 1
@@ -270,6 +281,7 @@ components:
 
   # ── フィルタ（phoenix_candidate_pipeline.rs:344-362 の配線順）
   - id: P012
+    stage: main
     kind: filter
     name: DropDuplicatesFilter
     order: 1
@@ -282,6 +294,7 @@ components:
     confidence: high
 
   - id: P013
+    stage: main
     kind: filter
     name: CoreDataHydrationFilter
     order: 2
@@ -294,6 +307,7 @@ components:
     confidence: high
 
   - id: P014
+    stage: main
     kind: filter
     name: AgeFilter
     order: 3
@@ -307,6 +321,7 @@ components:
     confidence: high
 
   - id: P015
+    stage: main
     kind: filter
     name: SelfTweetFilter
     order: 4
@@ -319,6 +334,7 @@ components:
     confidence: high
 
   - id: P016
+    stage: main
     kind: filter
     name: OONRetweetReplyFilter
     order: 5
@@ -337,6 +353,7 @@ components:
     confidence: high
 
   - id: P017
+    stage: main
     kind: filter
     name: OONNsfwSimclustersFilter
     order: 6
@@ -350,6 +367,7 @@ components:
     confidence: high
 
   - id: P018
+    stage: main
     kind: filter
     name: RetweetDeduplicationFilter
     order: 7
@@ -367,6 +385,7 @@ components:
     confidence: high
 
   - id: P019
+    stage: main
     kind: filter
     name: IneligibleSubscriptionFilter
     order: 8
@@ -379,6 +398,7 @@ components:
     confidence: high
 
   - id: P020
+    stage: main
     kind: filter
     name: PreviouslySeenPostsFilter
     order: 9
@@ -391,6 +411,7 @@ components:
     confidence: high
 
   - id: P021
+    stage: main
     kind: filter
     name: PreviouslySeenPostsBackupFilter
     order: 10
@@ -403,6 +424,7 @@ components:
     confidence: high
 
   - id: P022
+    stage: main
     kind: filter
     name: PreviouslyServedPostsFilter
     order: 11
@@ -415,6 +437,7 @@ components:
     confidence: high
 
   - id: P023
+    stage: main
     kind: filter
     name: MutedKeywordFilter
     order: 12
@@ -428,6 +451,7 @@ components:
     confidence: high
 
   - id: P024
+    stage: main
     kind: filter
     name: AuthorSocialgraphFilter
     order: 13
@@ -445,6 +469,7 @@ components:
     confidence: high
 
   - id: P025
+    stage: main
     kind: filter
     name: VideoFilter
     order: 14
@@ -457,6 +482,7 @@ components:
     confidence: high
 
   - id: P026
+    stage: main
     kind: filter
     name: TopicIdsFilter
     order: 15
@@ -469,6 +495,7 @@ components:
     confidence: high
 
   - id: P027
+    stage: main
     kind: filter
     name: NewUserMinEngagementFilter
     order: 16
@@ -484,6 +511,7 @@ components:
     confidence: high
 
   - id: P028
+    stage: main
     kind: filter
     name: InventoryHoldoutFilter
     order: 17
@@ -500,6 +528,7 @@ components:
   # ── ハイドレータ（phoenix_candidate_pipeline.rs:325-342 の配線順）
   # フィルタが判定に使う情報は、この段で候補に書き込まれる。
   - id: P029
+    stage: main
     kind: hydrator
     name: InNetworkCandidateHydrator
     order: 1
@@ -516,6 +545,7 @@ components:
     confidence: high
 
   - id: P030
+    stage: main
     kind: hydrator
     name: BidirectionalFollowHydrator
     order: 2
@@ -533,6 +563,7 @@ components:
     confidence: high
 
   - id: P031
+    stage: main
     kind: hydrator
     name: CoreDataCandidateHydrator
     order: 3
@@ -551,6 +582,7 @@ components:
     confidence: high
 
   - id: P032
+    stage: main
     kind: hydrator
     name: QuoteHydrator
     order: 4
@@ -566,6 +598,7 @@ components:
     confidence: high
 
   - id: P033
+    stage: main
     kind: hydrator
     name: MediaInfoHydrator
     order: 5
@@ -583,6 +616,7 @@ components:
     confidence: high
 
   - id: P034
+    stage: main
     kind: hydrator
     name: SubscriptionHydrator
     order: 6
@@ -598,6 +632,7 @@ components:
     confidence: high
 
   - id: P035
+    stage: main
     kind: hydrator
     name: GizmoduckCandidateHydrator
     order: 7
@@ -614,6 +649,7 @@ components:
     confidence: high
 
   - id: P036
+    stage: main
     kind: hydrator
     name: BlockedByHydrator
     order: 8
@@ -629,6 +665,7 @@ components:
     confidence: high
 
   - id: P037
+    stage: main
     kind: hydrator
     name: FilteredTopicsHydrator
     order: 9
@@ -645,6 +682,7 @@ components:
     confidence: high
 
   - id: P038
+    stage: main
     kind: hydrator
     name: LanguageCodeHydrator
     order: 10
@@ -660,6 +698,7 @@ components:
     confidence: high
 
   - id: P039
+    stage: main
     kind: hydrator
     name: EngagementCountsHydrator
     order: 11
@@ -679,6 +718,7 @@ components:
     confidence: high
 
   - id: P040
+    stage: main
     kind: hydrator
     name: SemanticIdHydrator
     order: 12
@@ -691,4 +731,130 @@ components:
       - path: home-mixer/candidate_hydrators/semantic_id_hydrator.rs
         line: 117
         snippet: 'candidate.semantic_ids = hydrated.semantic_ids;'
+    confidence: high
+
+  # ── 選択後のハイドレータ（phoenix_candidate_pipeline.rs:400-415）
+  # セレクタで上位 50 件に絞ったあとに走る。高コストな処理を全候補にかけないための配置。
+  - id: P041
+    stage: post_selection
+    kind: hydrator
+    name: VFCandidateHydrator
+    order: 1
+    role: 可視性フィルタ（visibility filtering）の判定結果を候補に付ける。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 400
+        line_end: 403
+        snippet: 'VFCandidateHydrator::new(strato_vf_client.clone(), xai_vf_client.clone()).await,'
+    confidence: high
+
+  - id: P042
+    stage: post_selection
+    kind: hydrator
+    name: AdsBrandSafetyVfHydrator
+    order: 2
+    role: 広告のブランドセーフティ用の安全性ラベルを付ける。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 404
+        line_end: 406
+        snippet: 'Box::new(AdsBrandSafetyVfHydrator {'
+    confidence: high
+
+  - id: P043
+    stage: post_selection
+    kind: hydrator
+    name: TweetTypeMetricsHydrator
+    order: 3
+    role: 投稿の種別（単独・リプライ・リポスト等）の計測用メトリクスを付ける。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 407
+        snippet: 'Box::new(TweetTypeMetricsHydrator::new()),'
+    confidence: high
+
+  - id: P044
+    stage: post_selection
+    kind: hydrator
+    name: FollowingRepliedUsersHydrator
+    order: 4
+    role: 会話の参加者のうち閲覧者がフォローしている人の情報を付ける。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 408
+        snippet: 'Box::new(FollowingRepliedUsersHydrator),'
+    confidence: high
+
+  - id: P045
+    stage: post_selection
+    kind: hydrator
+    name: MutualFollowJaccardHydrator
+    order: 5
+    role: 閲覧者と著者の相互フォロー集合の重なり（Jaccard 係数）を付ける。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 409
+        line_end: 411
+        snippet: 'Box::new(MutualFollowJaccardHydrator {'
+    confidence: high
+
+  - id: P046
+    stage: post_selection
+    kind: hydrator
+    name: TopicFeedbackContextHydrator
+    order: 6
+    role: トピックに対するフィードバック用の文脈情報を付ける。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 412
+        line_end: 414
+        snippet: 'Box::new(TopicFeedbackContextHydrator {'
+    confidence: high
+
+  # ── 選択後のフィルタ（phoenix_candidate_pipeline.rs:417-421）
+  # ここで落ちた分だけ、返る件数は result_size の 35 より少なくなりうる。
+  - id: P047
+    stage: post_selection
+    kind: filter
+    name: VFFilter
+    order: 1
+    role: 可視性フィルタの判定に基づいて候補を落とす。
+    controlled_by: system
+    author_note: 安全性ラベルによる出し分け。判定モデル自体は本リポジトリに含まれない。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 418
+        snippet: 'Box::new(VFFilter),'
+    confidence: high
+
+  - id: P048
+    stage: post_selection
+    kind: filter
+    name: AncillaryVFFilter
+    order: 2
+    role: 引用元・リポスト元など付随する投稿の可視性に基づいて落とす。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 419
+        snippet: 'Box::new(AncillaryVFFilter),'
+    confidence: high
+
+  - id: P049
+    stage: post_selection
+    kind: filter
+    name: DedupConversationFilter
+    order: 3
+    role: 同じ会話スレッドから複数の候補が残ったときに重複を落とす。
+    controlled_by: system
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 420
+        snippet: 'Box::new(DedupConversationFilter),'
     confidence: high

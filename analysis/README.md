@@ -88,9 +88,10 @@ factors:
 ```yaml
 components:
   - id: P001                    # P + 3 桁
+    stage: main                 # main|post_selection（選択の前か後か）
     kind: filter                # source|hydrator|filter|scorer|selector
     name: AgeFilter             # コード上の型名そのまま
-    order: 3                    # その kind の中での配線順（1 始まり）
+    order: 3                    # その stage × kind の中での配線順（1 始まり）
     role: <何をするか。判定条件を含む 1〜2 文>
     controlled_by: author       # author|viewer|system
     author_note: <投稿者から見た意味。任意>
@@ -112,8 +113,12 @@ components:
 ### `order` は機械検証される
 
 `order` は「何がどの順で並ぶか」というこの台帳の中心的な主張なので、
-`kind` ごとに **1 始まりの連番・重複なし**であることを `make verify` が検証する。
+**`stage` × `kind` ごとに 1 始まりの連番・重複なし**であることを `make verify` が検証する。
 要素を 1 つ消せば欠番として落ちるので、カタログの取りこぼしが CI で分かる。
+
+`stage` を分けているのは、選択後（`post_selection`）のフィルタが
+本編のフィルタ列とは別の 1 本だから。同じ `kind: filter` でも列が違うので、
+連番を共有させると実際の配線を誤って表現することになる。
 
 ## 書いてはいけないこと
 

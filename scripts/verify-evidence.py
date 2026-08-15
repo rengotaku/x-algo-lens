@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """根拠台帳を、ピン留めした解析対象の実ファイルと突き合わせて検証する。
 
-台帳は 2 本ある。
-  analysis/factors.yaml — 投稿者が操作可能なランキング要因
-  analysis/code.yaml    — コードそのもの（設計・実装技法）の観察
+台帳は 3 本ある。
+  analysis/factors.yaml    — 投稿者が操作可能なランキング要因
+  analysis/code.yaml       — コードそのもの（設計・実装技法）の観察
+  analysis/components.yaml — パイプライン構成要素のカタログ
 
 この repo の主張はすべて「該当ファイルの該当行にこの文字列が実在する」まで固定されている。
-evidence の照合ロジックは 1 箇所だけに置き、両台帳に同じ厳しさで適用する。
+evidence の照合ロジックは 1 箇所だけに置き、全台帳に同じ厳しさで適用する。
 1 件でも不一致・欠落があれば exit 1（fail-closed）。
 """
 
@@ -34,6 +35,8 @@ STAGES = {"source", "hydrator", "filter", "scorer", "selector", "visibility", "i
 CONTROLLABLE = {"direct", "indirect", "none"}
 DIRECTIONS = {"boost", "suppress", "gate", "neutral"}
 KINDS = {"source", "hydrator", "filter", "scorer", "selector"}
+# 選択（selector）の前か後か。post_selection の filter は main の filter とは別の列
+STAGES_PIPELINE = {"main", "post_selection"}
 # 誰の都合でその処理が効くか。author=投稿の作り方 / viewer=閲覧者の設定・履歴 / system=運用・実験・整合
 CONTROLLED_BY = {"author", "viewer", "system"}
 TOPICS = {
@@ -61,9 +64,9 @@ class LedgerSpec:
     required: tuple[str, ...]
     enums: dict[str, set[str]]
     stat_keys: tuple[str, ...]
-    # 設定すると、このキーで entries をグループ分けし、各グループの `order` が
+    # 設定すると、これらのキーの組で entries をグループ分けし、各グループの `order` が
     # 1 始まりの連番（重複なし）であることを検証する。配線順を持つ台帳で使う。
-    order_group: str | None = None
+    order_group: tuple[str, ...] = ()
 
     @property
     def path(self) -> Path:
@@ -122,6 +125,7 @@ LEDGERS = (
         label="構成要素",
         required=(
             "id",
+            "stage",
             "kind",
             "name",
             "order",
@@ -131,12 +135,13 @@ LEDGERS = (
             "confidence",
         ),
         enums={
+            "stage": STAGES_PIPELINE,
             "kind": KINDS,
             "controlled_by": CONTROLLED_BY,
             "confidence": CONFIDENCE,
         },
-        stat_keys=("kind", "controlled_by", "confidence"),
-        order_group="kind",
+        stat_keys=("stage", "kind", "controlled_by", "confidence"),
+        order_group=("stage", "kind"),
     ),
 )
 
@@ -297,10 +302,12 @@ def check_order(spec: LedgerSpec, entries: list, fail: Failures) -> None:
         if isinstance(order, bool) or not isinstance(order, int) or order < 1:
             fail.add(f"{spec.filename} {eid}", f"order は 1 以上の整数にする: {order!r}")
             continue
-        groups.setdefault(entry.get(spec.order_group), []).append(order)
+        key = tuple(entry.get(k) for k in spec.order_group)
+        groups.setdefault(key, []).append(order)
 
     for group, orders in groups.items():
-        where = f"{spec.filename} {spec.order_group}={group}"
+        label = " ".join(f"{k}={v}" for k, v in zip(spec.order_group, group))
+        where = f"{spec.filename} {label}"
         expected = list(range(1, len(orders) + 1))
         if sorted(orders) != expected:
             dupes = sorted({o for o in orders if orders.count(o) > 1})
