@@ -33,6 +33,9 @@ STAGES = {"source", "hydrator", "filter", "scorer", "selector", "visibility", "i
 # YAML 1.1 が yes/no を真偽値に解釈するため、その 2 語は意図的に避けている
 CONTROLLABLE = {"direct", "indirect", "none"}
 DIRECTIONS = {"boost", "suppress", "gate", "neutral"}
+KINDS = {"source", "hydrator", "filter", "scorer", "selector"}
+# 誰の都合でその処理が効くか。author=投稿の作り方 / viewer=閲覧者の設定・履歴 / system=運用・実験・整合
+CONTROLLED_BY = {"author", "viewer", "system"}
 TOPICS = {
     "architecture",
     "abstraction",
@@ -108,6 +111,28 @@ LEDGERS = (
         ),
         enums={"topic": TOPICS, "confidence": CONFIDENCE},
         stat_keys=("topic", "confidence"),
+    ),
+    LedgerSpec(
+        filename="components.yaml",
+        entries_key="components",
+        id_prefix="P",
+        label="構成要素",
+        required=(
+            "id",
+            "kind",
+            "name",
+            "order",
+            "role",
+            "controlled_by",
+            "evidence",
+            "confidence",
+        ),
+        enums={
+            "kind": KINDS,
+            "controlled_by": CONTROLLED_BY,
+            "confidence": CONFIDENCE,
+        },
+        stat_keys=("kind", "controlled_by", "confidence"),
     ),
 )
 

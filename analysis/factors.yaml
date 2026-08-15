@@ -402,3 +402,33 @@ factors:
       （実測: `grep -rn FEED_MODULE_SLOTS home-mixer/ | grep -v params/config.rs` = 0 件）ため、
       「モジュール 4 枠」という配分の根拠はコードには無い。
       また 1 レスポンスあたりの上限であって、1 日に表示される総数ではない。
+
+  - id: F014
+    name: 重みは実測の反応数ではなくモデルの予測確率に掛かる
+    stage: scorer
+    author_controllable: indirect
+    direction: neutral
+    summary: >-
+      採点は 3 段。まず PhoenixScorer が外部モデルを呼び、アクション種別ごとに
+      「それが起きる確率」を予測して候補に書き込む。次に RankingScorer がその予測値に
+      F001〜F004 の重みを掛けて合算する。最後に VMRanker が 2 段目のモデルで再採点する。
+      つまり重みが掛かる相手は「実際に付いたいいねの数」ではなく「いいねされる予測確率」。
+    evidence:
+      - path: home-mixer/candidate_pipeline/phoenix_candidate_pipeline.rs
+        line: 396
+        snippet: 'vec![phoenix_scorer, ranking_scorer, vm_ranker];'
+      - path: home-mixer/scorers/phoenix_scorer.rs
+        line: 109
+        snippet: 'phoenix_scores: predictions.candidate_scores(&c.get_original_tweet_id()),'
+      - path: home-mixer/scorers/ranking_scorer.rs
+        line: 431
+        line_end: 436
+        snippet: 'let scores: &PhoenixScores = &candidate.phoenix_scores;'
+      - path: home-mixer/scorers/ranking_scorer.rs
+        line: 454
+        snippet: 'let base_dwell_time_term = Self::apply(scores.dwell_time, weights.cont_dwell_time);'
+    confidence: high
+    notes: >-
+      この違いは F001〜F004 の読み方を変える。重みの比は「どの反応が価値が高いと
+      見なされているか」を表すが、投稿に実際に付いた反応がそのまま代入されるわけではない。
+      予測モデル自体は公開されていないため、何が予測を動かすかはコードからは追えない。

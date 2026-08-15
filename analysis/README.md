@@ -1,14 +1,19 @@
 # 台帳の書き方
 
-## 2 本の台帳
+## 3 本の台帳
 
 | ファイル | 対象 | 問い |
 |---|---|---|
 | `factors.yaml` | 投稿者が操作可能なランキング要因 | この投稿はどう扱われるか |
 | `code.yaml` | コードそのもの（設計・実装技法） | この実装はどう作られているか |
+| `components.yaml` | パイプラインの構成要素カタログ | 何がどの順で並んでいるか |
 
 観点は独立している。`code.yaml` に「投稿者が操作できるか」を書かないし、
 `factors.yaml` に「この trait 設計が良い」を書かない。混ぜると両方が薄まる。
+
+`components.yaml` は**配線の目録**であって、レバーの説明ではない。
+「フォロー外の RT が落ちる」ことの意味は `factors.yaml`（F005）にあり、
+カタログ側は「その処理が 5 番目に並んでいる」ことを持つ。
 
 **evidence の照合ロジックは両者で共通**（`verify-evidence.py` の `check_evidence` 1 箇所）。
 片方だけ緩い検証にすると、台帳全体の信頼度が読み手から見て不明になる。
@@ -77,6 +82,32 @@ factors:
 - `high` — コードに直接書いてあり、解釈の余地が小さい
 - `medium` — コードは読めているが、本番での有効性や適用条件に不確実性がある
 - `low` — 断片的な根拠しかない。原則ここに置くくらいなら調査タスクにする
+
+## components.yaml のスキーマ
+
+```yaml
+components:
+  - id: P001                    # P + 3 桁
+    kind: filter                # source|hydrator|filter|scorer|selector
+    name: AgeFilter             # コード上の型名そのまま
+    order: 3                    # その kind の中での配線順（1 始まり）
+    role: <何をするか。判定条件を含む 1〜2 文>
+    controlled_by: author       # author|viewer|system
+    author_note: <投稿者から見た意味。任意>
+    evidence: [...]             # factors / code と同じ形式・同じ検証
+    confidence: high
+```
+
+### `controlled_by` の判定
+
+| 値 | 意味 | 例 |
+|---|---|---|
+| `author` | 投稿の作り方・内容で結果が変わる | 経過時間、投稿の形式 |
+| `viewer` | 閲覧者の設定・履歴で決まる | ミュートキーワード、既読 |
+| `system` | 運用・実験・データ整合のため | 重複排除、ホールドアウト |
+
+`factors.yaml` の `author_controllable` とは別物。あちらは「レバーになるか」、
+こちらは「誰の都合でその処理が効くか」を見る。
 
 ## 書いてはいけないこと
 
